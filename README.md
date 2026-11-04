@@ -1,41 +1,35 @@
 # 反诈库直查 · fkmiui
 
-一个只读的 **SQLite 直查工具**，专门用来读小米 HyperOS 反诈组件（XSOF 涉诈检测）留下的
-`fraud_detection_data.db`：把截图、录屏、通话、飞行模式、应用安装这些记录解析成一条时间线。
+读取小米 HyperOS 反诈组件留下的本地数据库 `fraud_detection_data.db`，把里面的记录整理成时间线。
 
-纯前端实现，自带 SQLite 解析器，不依赖任何原生库；安卓端只有一个 WebView 壳。
-
-- 包名：`com.catsuki.fkmiui`
-- 数据库原始路径：`/data/misc/user/0/securitycenter/fraud_detection_data.db`
-- 写入方：`com.miui.securitycenter` 里的 `MiFraudDetectionService`
-
-> 全程只读。解析、恢复都在内存里完成，不写回数据库，不上传、不联网、不收集任何数据。
+只读，不写回数据库，不上传、不联网（检查更新除外），不收集任何数据。
 
 ---
 
-## 它解决什么问题
+## 背景
 
-HyperOS 的反诈组件会在本地记录敏感行为：什么时候截了图、有没有屏幕共享/录屏、装过哪些应用、
-有没有境外或虚拟运营商通话、飞行模式开关、访问过的涉诈链接。这些记录**不会**出现在任何设置界面里，
-用户只能靠挖数据库才能看到。
+- 文件路径：`/data/misc/user/0/securitycenter/fraud_detection_data.db`
+- 写入方：`com.miui.securitycenter` 中的 `MiFraudDetectionService`（XSOF 涉诈检测）
+- 记录内容：截图时间、屏幕共享/录屏、通话、VoIP 通话、应用安装、涉诈链接、飞行模式、呼叫转移
+- 保留策略：写入时清理超窗口的旧记录，截图表通常只保留最近 72 小时
 
-这个工具把这件事做得像个正经 App：选进一个 `db` 文件，直接出可读的时间线。
+这些记录不会出现在任何系统设置界面里，只能通过数据库查看。
 
 ## 功能
 
-- **时间线**：所有表的事件倒序混排，按天分组，可只筛「截图 / 录屏 / 通话 / 飞行 / 安装 / 链接」
-- **表格**：按表查看原始字段，`md5`、`duration`、`app_tag_id` 之类全都不藏
-- **统计**：各表记录数、每天截图柱状图、`sqlite_sequence` 累计写入量
-- **媒体配对**：读 MediaStore 里的截图图片与录屏视频，按时间戳配到事件上，显示缩略图；录屏还会把库里的时长和视频实际时长对比，点缩略图直接打开原文件
-- **恢复模式**：扫页内空闲块和空闲页，把已删除但还留着的旧记录捞回来，标「已删除」显示
+- **时间线**：所有表的事件倒序混排，按天分组，可按类型筛选
+- **表格**：按表查看原始字段
+- **统计**：各表记录数、每天截图数、`sqlite_sequence` 累计写入量
+- **媒体配对**：把相册里的截图图片与录屏视频按时间戳配到事件上，显示缩略图
+- **通话记录**：用号码 MD5 匹配系统通话记录，还原明文号码与联系人
+- **恢复模式**：扫描空闲页与页内空闲块，列出已被删除但仍有残留的记录
 - **导出**：时间线 TXT / 全量 JSON / 事件 CSV
-- **通话记录解析**：读系统通话记录，用号码 md5 反查出明文号码、联系人和归属地，并和系统时长对比
-- **应用内查看**：点缩略图在 App 内直接看图 / 播视频，不跳出去
-- **检查更新**：查 GitHub 最新 Release，一键下载并调起安装
+- **诊断日志**：记录每次 `su` 调用与布局溢出，便于排查读不到文件的原因
+- **检查更新**：查询 GitHub Release 并在应用内下载安装
 
-## 支持的库结构
+## 表结构
 
-针对小米 XSOF 涉诈检测库，表结构与字段名都对得上：
+针对小米 XSOF 涉诈检测库：
 
 ```
 screenshot(_id, screenshot_time)
@@ -53,138 +47,77 @@ airplane_mode(_id, airplane_mode_on, airplane_mode_change_time)
 call_forwarding(_id, reason, enabled, timestamp)
 ```
 
-「表格」页对未知表也照常展开，字段名直接从 `sqlite_master` 的建表语句里解析。
+字段名从 `sqlite_master` 的建表语句里读，未知表也能在「表格」页展开。
 
-## 技术实现
+## 使用
 
-### 自研 SQLite 读取器（`web/sqlite.js`）
+**安装 APK**
 
-不调用 `sqlite3`、不用 WebAssembly，自己走 b-tree：
+从 [Releases](https://github.com/acnekot/frauddb/releases) 下载 `fkmiui-*.apk` 安装。包名 `com.catsuki.fkmiui`。
 
-- 库头解析：页大小（含 65536 特例）、保留字节、编码（UTF-8 / UTF-16LE / UTF-16BE）
-- 表 b-tree 遍历：叶子页 `0x0D` / 内部页 `0x05`，第 1 页要跳过 100 字节库头
-- payload 溢出链：按 `maxLocal` / `minLocal` 规则切分，跨页拼接
-- 记录解码：变长整数头 + 12 种 serial type，整数做符号扩展，text / blob 分别处理
-- 恢复模式：走 freelist（trunk → 叶子页）和每页的 freeblock 链，按「列数 + 时间字段落在毫秒区间」的
-  严格校验把残留 cell 归属回具体的表
+**读取数据库**
 
-### 安卓壳（`android/src/com/catsuki/fkmiui/MainActivity.java`）
+- 有 root：打开应用后自动尝试五个常见路径，找不到会逐个记录失败原因
+- 没有 root：先把文件复制到共享存储，再用「更多 → 选择 db 文件」
+- 也可以把数据库拷贝到电脑，用浏览器打开 `web/index.html`，通过文件选择器加载
 
-只有一个 Activity + 一个 `@JavascriptInterface` 桥：
+**权限**
 
-- `autoLoad()` 依次尝试五个常见路径，直读失败就走 `su -c cat`（支持 `su 0 cat` 兜底）
-- `pickFile()` 走 SAF，不需要 root
-- `screenshots()` 查 MediaStore 拿截图文件名
-- `exportText()` 写到 `Android/data/com.catsuki.fkmiui/files/export/`
-
-## 直接用浏览器跑
-
-`web/` 是自包含的，`file://` 打开 `index.html` 也能用：点「更多 → 选择 db 文件」挑一个副本即可，
-只是没有相册配对和 root 直读。
-
-## 权限
-
-所有敏感能力都按权限分组，不给就只关掉对应功能，其余照常可用喵。
-
-| 权限 | 用在哪 | 不授权时 |
+| 权限 | 用途 | 不授予时 |
 | --- | --- | --- |
-| `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` | 相册里的截图与录屏配对、缩略图 | 时间线照常显示，只是没有缩略图、点不开原文件 |
-| `READ_CALL_LOG` | 通话记录配对，把库里的号码 md5 还原成明文号码与联系人 | 通话事件只显示号码 md5 摘要 |
+| `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` | 相册截图与录屏配对、缩略图 | 时间线正常显示，没有缩略图 |
+| `READ_CALL_LOG` | 用号码 MD5 匹配系统通话记录 | 通话只显示号码摘要 |
 
-「更多 → 权限」里每一项都标了当前状态，点一下就是系统的授权弹窗，授权后自动重新加载对应数据喵。
-启动时只会静默读取已有授权状态，不会突然弹窗喵。
+权限在「更多 → 权限」里逐项申请，也可以完全不授权，其余功能照常使用。
 
-## 应用内查看
+## 实现说明
 
-点时间线上的缩略图，会在 App 内部打开 `MediaActivity`：图片按 2048 边长降采样显示，视频用 `VideoView` +
-`MediaController` 播放，播放完自动退出，点一下也能退出喵。全程不跳第三方图库或播放器喵。
-
-## 检查更新
-
-「更多 → 版本 → 检查更新」会拉 `https://api.github.com/repos/acnekot/frauddb/releases/latest`，
-取出 `tag_name`、更新说明和 APK 附件，跟本地 `versionName` 按数字段比较（`v1.3 > v1.2.9`）喵。
-
-有新版时显示更新说明，点「下载并安装」会：
-
-1. 下载到 `Android/data/com.catsuki.fkmiui/files/update/`，每 25% 写一条日志
-2. 校验拿到的是 `.apk`，通过内置的 `UpdateProvider`（`content://com.catsuki.fkmiui.updates/`）交给系统安装器
-3. 没有「安装未知应用」权限时先跳设置页引导
-
-整个过程的 HTTP 状态码、字节数、失败堆栈都会进诊断日志，网络不通也能看到是超时还是 403喵。
-不做后台自动检查，也不会不经你确认就下载任何东西喵。
-
-## 诊断日志
-
-root 读不到东西时，先看日志再猜原因喵。
-
-「更多 → 诊断 → 布局诊断」会立刻量一次页面宽度，列出把页面撑宽的元素喵。
-
-「更多 → 诊断 → 跑一次 root 自检」会依次执行 `id`、`getenforce`、`su -v`、`su -c id`、
-`su -c ls -ld /data/misc/user/0/securitycenter`、`su -c ls -l <库文件>`、列出已装的 root 管理器、
-以及 `ksud -V`，每一步都记录**退出码、耗时、stdout 字节数、预览、stderr**喵。
-
-日志覆盖这些内容：
-
-- 应用启动信息：版本、pid、uid、设备型号、Android 版本、内核、ABI
-- 每次 `su` 调用：完整命令行、退出码、耗时、原始输出长度、二进制首字节
-- 六个候选路径的 `exists` / `canRead` / `size` / 直读结果
-- 权限申请结果、MediaStore 查询数量、文件选择器返回
-- WebView 里的 JS 报错（`console.log` / 异常都会进来）
-- **布局诊断**：每次渲染后量一次 `scrollWidth` 与 `innerWidth`，一旦有元素超宽，就把它的选择器和左右边界写进日志喵
-
-日志写到 `/data/data/com.catsuki.fkmiui/files/logs/frauddb.log`，超过 512KB 自动轮转成 `.1.log`喵。
-在「诊断日志」页可以复制、导出、清空喵。
-
-常见结论对照：
-
-- `exit=1 err=permission denied` → root 管理器没给本应用授权
-- `su: not found` / `IOException: ENOENT` → 设备上没有可用的 su
-- `exit=TIMEOUT` → 多半在等授权弹窗，或者 late-load 卡在策略加载
-- `stdout=0B 无任何输出` 但没报错 → SELinux 拦住了读取
-
-## 构建
-
-需要 JDK 17、Android build-tools（`aapt2` `d8` `zipalign` `apksigner`）和一份 `android.jar`。
-`android/build.sh` 里的 `toolchain/` 路径按自己的环境改一下：
-
-```bash
-export JAVA_HOME=/path/to/jdk-17
-BT=/path/to/build-tools
-AJ=/path/to/platforms/android-36/android.jar
-bash android/build.sh
-```
-
-脚本会依次跑 aapt2 compile / link、javac、d8、打包 dex、zipalign、apksigner，
-产物落在 `build/frauddb.apk`。第一次运行会自动生成 `android/frauddb.keystore`（不纳入版本库）。
-
-## 已知限制
-
-- **恢复模式可能挖不到东西**：部分系统开着 `secure_delete`，删除时会清零空闲空间。
-  实测小米这套库的空闲区基本被清零，所以「含已删除」经常是 0 条。
-- 相册配对依赖 MediaStore 权限，只认 `Screenshot_YYYY-MM-DD-HH-MM-SS-MMM_pkg.ext` 这种命名。
-- root 直读走 `su`，没 root 就只能手动选文件。
-- 只处理主库文件，不含 `-wal` / `-shm`，未 checkpoint 的写入看不到。
-- 只读，不提供任何写入或清理能力。
+- `web/sqlite.js` 用 JavaScript 直接读 SQLite 文件的 b-tree，不依赖系统 sqlite 库。支持页大小 65536、溢出页、UTF-8/UTF-16 文本、freelist 与页内空闲块。因此「恢复模式」可以读取已删除但仍未覆盖的记录。
+- `android/` 是一个 WebView 壳，加一层 `@JavascriptInterface` 桥：读写文件、执行 `su`、查询 MediaStore 与 CallLog、下载更新包。
+- 界面为单页 HTML，样式和逻辑都在 `web/` 下，改完刷新即可。
 
 ## 目录结构
 
 ```
-web/                     前端（可直接用浏览器打开）
+web/
   index.html
-  app.css                MD3 设计令牌与组件
-  sqlite.js              SQLite 解析器 + 恢复模式
-  ui.js                  时间线 / 表格 / 统计 / 导出
+  app.css              界面样式
+  sqlite.js            SQLite 读取与恢复
+  ui.js                时间线 / 表格 / 统计 / 导出 / 诊断
 android/
   AndroidManifest.xml
-  build.sh               无 Gradle 的极简构建脚本
-  src/com/catsuki/fkmiui/MainActivity.java
-  res/                   自适应图标（背景 / 前景 / monochrome）
+  build.sh             不使用 Gradle 的构建脚本
+  src/com/catsuki/fkmiui/
+    MainActivity.java  壳与 JS 桥
+    MediaActivity.java 应用内看图 / 播放
+    UpdateProvider.java 把下载的 APK 交给安装器
+  res/                 自适应图标
 ```
+
+## 构建
+
+需要 JDK 17、Android build-tools（`aapt2` `d8` `zipalign` `apksigner`）和 `android.jar`。修改 `android/build.sh` 里的工具链路径后执行：
+
+```bash
+export JAVA_HOME=/path/to/jdk-17
+bash android/build.sh
+```
+
+产物在 `build/frauddb.apk`。首次运行会生成 `android/frauddb.keystore`，该文件不纳入版本库。
+
+## 已知限制
+
+- 没有 root 时读不到 `/data/misc/user/0/securitycenter/`，这是目录权限与 SELinux 限制，非应用问题
+- 恢复模式依赖空闲空间未被清零；系统开启 `secure_delete` 时基本捞不到东西
+- 只读主库文件，不处理 `-wal` / `-shm`，未 checkpoint 的写入看不到
+- 媒体配对依赖文件名里的时间戳，命名不同时回退到 MediaStore 的 `date_added`
+- 通话记录的 MD5 与库里算法不一致时，只能按时间匹配
 
 ## 免责
 
-这是一个本机取证与自查工具，只读、离线、不采集数据。请只对自己有权访问的设备使用。
-本项目与小米公司无关。
+本工具用于查看自己设备上的数据，只读、离线。请只对自己有权访问的设备使用。
+
+与小米公司无关联。
 
 ## License
 
