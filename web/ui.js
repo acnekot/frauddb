@@ -750,7 +750,7 @@
     if (!s.wm) { el.style.display = 'none'; el.innerHTML = ''; return; }
     el.style.display = 'flex';
     if (el.childElementCount) return;
-    var text = '反诈库直查';
+    var text = 'frauddb';
     var html = '';
     for (var i = 0; i < 60; i++) html += '<span>' + esc(text) + '</span>';
     el.innerHTML = html;

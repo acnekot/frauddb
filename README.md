@@ -123,7 +123,7 @@ call_forwarding(_id, reason, enabled, timestamp)
 
 ## 全局水印
 
-铺满整个界面的一层斜向淡色文字，内容是工具名「反诈库直查」，`pointer-events: none` 不挡点击。
+铺满整个界面的一层斜向淡色文字，内容是仓库名 `frauddb`，`pointer-events: none` 不挡点击。
 默认开启，可在「更多 → 显示」里关掉。截图或录屏时能带上出处。
 
 ## 实现说明
