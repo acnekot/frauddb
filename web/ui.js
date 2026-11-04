@@ -669,6 +669,7 @@
           '<button class="chip" data-act="logexport">导出</button>' +
           '<button class="chip" data-act="logclear">清空</button>' +
           '<button class="chip" data-act="logs">刷新</button>' +
+          '<button class="chip" data-view="more">返回设置</button>' +
         '</div>' +
         '<div class="logpath mono">' + esc(d.file || '（日志文件不可用）') + '</div>' +
         '<pre class="logview">' + body + '</pre>' +
