@@ -812,3 +812,49 @@ img, video, canvas, pre, table {
 .gbtn:active {
   background: color-mix(in srgb, var(--primary) 16%, transparent);
 }
+
+/* ---------- 全局水印 ---------- */
+.wm {
+  position: fixed;
+  inset: -20%;
+  z-index: 6;
+  pointer-events: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: flex-start;
+  transform: rotate(-22deg);
+  opacity: .05;
+  color: var(--on-surface);
+  font-size: 12px;
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+.wm span {
+  width: 168px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ---------- 版权 / 免责 ---------- */
+.legal {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--surface-highest);
+  color: var(--on-surface-var);
+  font-size: 12.5px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.legal b {
+  color: var(--on-surface);
+  font-weight: 600;
+}

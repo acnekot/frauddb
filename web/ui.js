@@ -53,7 +53,7 @@
     perms: null, callIndex: {}, callIndexRaw: {}, callList: [],
     persist: { enabled: false }, lastB64: '',
     reveal: false, contactIndex: {}, contactIndexRaw: {}, bookCount: 0,
-    dbs: [], saved: [], savedInfo: {}, mask: true
+    dbs: [], saved: [], savedInfo: {}, mask: true, wm: true
   };
 
   /* ---------- 工具 ---------- */
@@ -569,7 +569,32 @@
           '<small>' + (on ? '号码只留前三位，名称隐藏，点一下可临时显示' : '当前显示完整内容，注意截图与录屏') + '</small>' +
         '</span>' +
         '<span class="sw' + (on ? ' on' : '') + '"><i></i></span>' +
+      '</button>' +
+      '<button class="item" data-act="wmToggle">' +
+        ic('scan') +
+        '<span class="lbl">全局水印' +
+          '<small>' + (s.wm ? '铺满屏幕，截图也带出处' : '已关闭，截图不带水印') + '</small>' +
+        '</span>' +
+        '<span class="sw' + (s.wm ? ' on' : '') + '"><i></i></span>' +
       '</button></div>';
+  }
+
+  function aboutPanel() {
+    return '<div class="panel"><h2>关于</h2>' +
+      '<div class="kv" style="padding:0 0 6px">' +
+        '<div class="k">版本</div><div class="v">' + esc(s.version || '—') + '</div>' +
+        '<div class="k">作者</div><div class="v">acnekot</div>' +
+        '<div class="k">许可</div><div class="v">MIT</div>' +
+      '</div>' +
+      item('repo', 'link', '打开 GitHub 仓库', 'github.com/acnekot/frauddb') +
+      '<div class="legal">' +
+        '<b>版权声明</b><br>© 2026 acnekot。本项目以 MIT 许可证发布，完整条款见仓库中的 LICENSE 文件。' +
+        '<br><br><b>免责声明</b><br>' +
+        '本工具仅在本机读取数据库并渲染，不上传、不转发任何数据。' +
+        '请仅对自己拥有或已获得明确授权的设备使用。' +
+        '因使用本工具导致的任何直接或间接损失，作者不承担责任。' +
+        '本项目与小米公司无任何关联。' +
+      '</div></div>';
   }
 
   function permPanel() {
@@ -617,6 +642,7 @@
         item('logs', 'info', '诊断日志', 'su 调用、返回码、SELinux、路径探测') +
         item('logcopy', 'download', '复制全部日志', '直接贴出来就能看') +
       '</div>' +
+      aboutPanel() +
       '<div class="panel"><h2>说明</h2><div style="font-size:13px;line-height:1.8;color:var(--on-surface-var)">' +
         '只读工具：解析与恢复都在内存里完成，不会写回原始数据库。<br><br>' +
         '截图表只有时间戳。开启相册权限后可按时间配到真实图片与录屏，显示缩略图，点击可在应用内查看或播放。<br><br>' +
@@ -706,6 +732,28 @@
       setView('logs');
       render();
     }, 20);
+  }
+
+  function getWm() {
+    try { return localStorage.getItem('fkmiui.wm') !== '0'; } catch (e) { return true; }
+  }
+
+  function setWm(v) {
+    s.wm = !!v;
+    try { localStorage.setItem('fkmiui.wm', v ? '1' : '0'); } catch (e) { }
+    renderWatermark();
+  }
+
+  function renderWatermark() {
+    var el = document.getElementById('wm');
+    if (!el) return;
+    if (!s.wm) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'flex';
+    if (el.childElementCount) return;
+    var text = '反诈库直查';
+    var html = '';
+    for (var i = 0; i < 60; i++) html += '<span>' + esc(text) + '</span>';
+    el.innerHTML = html;
   }
 
   function getMask() {
@@ -985,6 +1033,7 @@
         document.documentElement.style.setProperty('--topbar-h', tb.offsetHeight + 'px');
       }
     } catch (e) { }
+    renderWatermark();
     renderMeta();
     renderChips();
     if (!s.db) {
@@ -1284,6 +1333,15 @@
       else if (act === 'check') doCheck(false);
       else if (act === 'doupdate') doDownload();
       else if (act === 'openpage') { if (window.Android && Android.openUrl) Android.openUrl(s.update.page); }
+      else if (act === 'wmToggle') {
+        setWm(!s.wm);
+        toast(s.wm ? '已开启水印' : '已关闭水印');
+        render();
+      }
+      else if (act === 'repo') {
+        if (window.Android && Android.openUrl) Android.openUrl('https://github.com/acnekot/frauddb');
+        else toast('github.com/acnekot/frauddb');
+      }
       else if (act === 'maskToggle') {
         setMask(!s.mask);
         toast(s.mask ? '已开启打码' : '已关闭打码，注意他人可见');
@@ -1444,6 +1502,8 @@
     s.persist = persistInfo();
     s.reveal = getReveal();
     s.mask = getMask();
+    s.wm = getWm();
+    renderWatermark();
     if (s.reveal) {
       setTimeout(function () { loadCallLog(); loadContacts(); }, 300);
     }
