@@ -48,7 +48,8 @@
     db: null, name: '', path: '', src: '',
     events: [], recovered: [], screens: [], showPair: false,
     view: 'timeline', filter: 'all', table: null,
-    shown: 240, showDeleted: true, tableShown: 80
+    shown: 240, showDeleted: true, tableShown: 80,
+    version: '', update: null, checking: false, downloaded: ''
   };
 
   /* ---------- 工具 ---------- */
@@ -442,9 +443,30 @@
       ic('chevron') + '</button>';
   }
 
+  function versionPanel() {
+    var u = s.update;
+    var body = '<div class="kv"><div class="k">当前版本</div><div class="v">' + esc(s.version || '未知') + '</div>';
+    if (u && u.ok) {
+      body += '<div class="k">最新版本</div><div class="v">' + esc(u.latest || '—') +
+        (u.hasUpdate ? ' · <b style="color:var(--primary)">有更新</b>' : ' · 已是最新') + '</div>';
+    } else if (u && u.error) {
+      body += '<div class="k">检查结果</div><div class="v">失败：' + esc(u.error) + '</div>';
+    }
+    body += '</div>';
+    if (u && u.ok && u.hasUpdate) {
+      if (u.notes) body += '<div class="notes">' + esc(String(u.notes).slice(0, 800)) + '</div>';
+      if (u.apk) body += item('doupdate', 'download', '下载并安装 ' + u.latest, u.size ? sizeText(u.size) : '');
+      if (u.page) body += item('openpage', 'link', '在浏览器打开发布页', '');
+    }
+    body += item('check', 'refresh', s.checking ? '正在检查…' : (u ? '重新检查更新' : '检查更新'),
+      s.version ? '当前 ' + s.version : '');
+    return '<div class="panel"><h2>版本</h2>' + body + '</div>';
+  }
+
   function renderMore() {
     var hasBridge = !!window.Android;
     $('#view').innerHTML =
+      versionPanel() +
       '<div class="panel"><h2>读取</h2>' +
         item('auto', 'folder', '从系统路径读取', hasBridge ? '自动尝试五个常见位置，需要 root' : '需要在 App 内运行', !hasBridge) +
         item('pick', 'download', '选择 db 文件', '系统文件选择器，不需要 root') +
@@ -493,6 +515,45 @@
         '<div class="logpath mono">' + esc(d.file || '（日志文件不可用）') + '</div>' +
         '<pre class="logview">' + body + '</pre>' +
       '</div>';
+  }
+
+  function doCheck(silent) {
+    if (!window.Android || !Android.checkUpdate) { if (!silent) toast('需要在 App 内运行'); return; }
+    if (s.checking) return;
+    s.checking = true;
+    if (!silent) render();
+    setTimeout(function () {
+      try {
+        s.update = JSON.parse(Android.checkUpdate() || '{}');
+      } catch (e) {
+        s.update = { ok: false, error: String(e) };
+      }
+      s.checking = false;
+      if (s.view === 'more') render();
+      if (!silent && s.update && s.update.ok) {
+        toast(s.update.hasUpdate ? '发现新版本 ' + s.update.latest : '已经是最新版本');
+      }
+    }, 20);
+  }
+
+  function doDownload() {
+    var u = s.update;
+    if (!u || !u.apk) { toast('没有可下载的安装包'); return; }
+    if (!window.Android || !Android.downloadUpdate) { toast('需要在 App 内运行'); return; }
+    toast('开始下载…');
+    setTimeout(function () {
+      var r;
+      try { r = JSON.parse(Android.downloadUpdate(u.apk) || '{}'); }
+      catch (e) { r = { ok: false, error: String(e) }; }
+      if (r && r.ok) {
+        s.downloaded = r.name;
+        toast('下载完成，开始安装');
+        try { Android.installUpdate(r.name); } catch (e) { toast('安装调用失败'); }
+      } else {
+        toast('下载失败：' + (r && r.error ? r.error : '未知'));
+      }
+      if (s.view === 'more') render();
+    }, 20);
   }
 
   function runSelfTest() {
@@ -677,6 +738,9 @@
       else if (act === 'auto') autoLoad();
       else if (act === 'pick') pick();
       else if (act === 'screens') { s.screens = []; loadScreens(); }
+      else if (act === 'check') doCheck(false);
+      else if (act === 'doupdate') doDownload();
+      else if (act === 'openpage') { if (window.Android && Android.openUrl) Android.openUrl(s.update.page); }
       else if (act === 'selftest') runSelfTest();
       else if (act === 'logs') { setView('logs'); render(); }
       else if (act === 'logcopy') { if (window.Android && Android.copyText) Android.copyText(logText().lines.join('\n')); else toast('需要在 App 内运行'); }
@@ -720,6 +784,9 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     bind();
+    if (window.Android && Android.versionInfo) {
+      try { s.version = (JSON.parse(Android.versionInfo() || '{}') || {}).name || ''; } catch (e) { }
+    }
     if (window.Android && Android.autoLoad) setTimeout(autoLoad, 150);
     else render();
   });

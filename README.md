@@ -29,6 +29,7 @@ HyperOS 的反诈组件会在本地记录敏感行为：什么时候截了图、
 - **截图配对**：读 `Pictures/Screenshots` 的文件名，把截图时间戳对到当时的包名，还原「几点在哪个 App 截图」
 - **恢复模式**：扫页内空闲块和空闲页，把已删除但还留着的旧记录捞回来，标「已删除」显示
 - **导出**：时间线 TXT / 全量 JSON / 事件 CSV
+- **检查更新**：查 GitHub 最新 Release，一键下载并调起安装
 
 ## 支持的库结构
 
@@ -78,6 +79,20 @@ call_forwarding(_id, reason, enabled, timestamp)
 
 `web/` 是自包含的，`file://` 打开 `index.html` 也能用：点「更多 → 选择 db 文件」挑一个副本即可，
 只是没有相册配对和 root 直读。
+
+## 检查更新
+
+「更多 → 版本 → 检查更新」会拉 `https://api.github.com/repos/acnekot/frauddb/releases/latest`，
+取出 `tag_name`、更新说明和 APK 附件，跟本地 `versionName` 按数字段比较（`v1.3 > v1.2.9`）喵。
+
+有新版时显示更新说明，点「下载并安装」会：
+
+1. 下载到 `Android/data/com.catsuki.fkmiui/files/update/`，每 25% 写一条日志
+2. 校验拿到的是 `.apk`，通过内置的 `UpdateProvider`（`content://com.catsuki.fkmiui.updates/`）交给系统安装器
+3. 没有「安装未知应用」权限时先跳设置页引导
+
+整个过程的 HTTP 状态码、字节数、失败堆栈都会进诊断日志，网络不通也能看到是超时还是 403喵。
+不做后台自动检查，也不会不经你确认就下载任何东西喵。
 
 ## 诊断日志
 

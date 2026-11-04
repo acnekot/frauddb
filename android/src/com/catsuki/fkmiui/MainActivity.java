@@ -27,6 +27,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -95,6 +101,14 @@ public class MainActivity extends Activity {
         log("APP", "内核 " + System.getProperty("os.version") + " / ABI " + Build.SUPPORTED_ABIS[0]);
         log("APP", "日志文件 " + logFile.getAbsolutePath());
         askPerm();
+    }
+
+    private int versionCode() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+        } catch (Throwable e) {
+            return 0;
+        }
     }
 
     private String versionName() {
@@ -448,6 +462,145 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String versionInfo() {
+            return "{\"name\":" + q(versionName()) + ",\"code\":" + versionCode() + "}";
+        }
+
+        /** 查 GitHub 最新 Release，并和本地版本比较 */
+        @JavascriptInterface
+        public String checkUpdate() {
+            final String api = "https://api.github.com/repos/acnekot/frauddb/releases/latest";
+            log("UPD", "检查更新 " + api);
+            long t0 = System.currentTimeMillis();
+            try {
+                String body = httpGet(api);
+                log("UPD", "HTTP 200，返回 " + body.length() + " 字符，耗时 " + (System.currentTimeMillis() - t0) + "ms");
+                JSONObject o = new JSONObject(body);
+                String tag = o.optString("tag_name", "");
+                String title = o.optString("name", tag);
+                String notes = o.optString("body", "");
+                String page = o.optString("html_url", "");
+                String apk = "";
+                long size = 0;
+                JSONArray assets = o.optJSONArray("assets");
+                if (assets != null) {
+                    for (int i = 0; i < assets.length(); i++) {
+                        JSONObject a = assets.getJSONObject(i);
+                        String n = a.optString("name", "");
+                        if (n.endsWith(".apk")) {
+                            apk = a.optString("browser_download_url", "");
+                            size = a.optLong("size", 0);
+                            break;
+                        }
+                    }
+                }
+                int cmp = compareVersion(tag, versionName());
+                boolean newer = cmp > 0;
+                log("UPD", "本地 " + versionName() + " 最新 " + tag + " → " + (newer ? "有更新" : "已是最新")
+                        + (apk.isEmpty() ? "（该 Release 没有 APK 附件）" : ""));
+                return "{\"ok\":true,\"current\":" + q(versionName())
+                        + ",\"latest\":" + q(tag) + ",\"title\":" + q(title)
+                        + ",\"notes\":" + q(notes) + ",\"page\":" + q(page)
+                        + ",\"apk\":" + q(apk) + ",\"size\":" + size
+                        + ",\"hasUpdate\":" + newer + "}";
+            } catch (Throwable e) {
+                String msg = e.getClass().getSimpleName() + ": " + e.getMessage();
+                log("UPD", "检查失败 " + msg);
+                return "{\"ok\":false,\"current\":" + q(versionName()) + ",\"error\":" + q(msg) + "}";
+            }
+        }
+
+        /** 下载 APK 到应用私有目录，返回提示用 JSON */
+        @JavascriptInterface
+        public String downloadUpdate(String url) {
+            log("UPD", "开始下载 " + url);
+            HttpURLConnection c = null;
+            try {
+                File dir = getExternalFilesDir("update");
+                if (dir == null) dir = new File(getFilesDir(), "update");
+                if (!dir.exists()) dir.mkdirs();
+                String fileName = url.substring(url.lastIndexOf('/') + 1);
+                if (!fileName.endsWith(".apk")) fileName = "fkmiui-update.apk";
+                File out = new File(dir, fileName);
+
+                c = (HttpURLConnection) new URL(url).openConnection();
+                c.setRequestProperty("User-Agent", "fkmiui/" + versionName());
+                c.setInstanceFollowRedirects(true);
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(30000);
+                int code = c.getResponseCode();
+                long total = c.getContentLength();
+                log("UPD", "下载响应 " + code + " 大小 " + total);
+                if (code != 200) return "{\"ok\":false,\"error\":" + q("HTTP " + code) + "}";
+
+                InputStream in = c.getInputStream();
+                OutputStream fos = new FileOutputStream(out);
+                byte[] buf = new byte[32 * 1024];
+                long done = 0;
+                int n, lastMark = 0;
+                while ((n = in.read(buf)) > 0) {
+                    fos.write(buf, 0, n);
+                    done += n;
+                    int pct = total > 0 ? (int) (done * 100 / total) : 0;
+                    if (pct >= lastMark + 25) {
+                        lastMark = pct;
+                        log("UPD", "已下载 " + pct + "%（" + done + "/" + total + "）");
+                    }
+                }
+                fos.close();
+                in.close();
+                log("UPD", "下载完成 " + out.getAbsolutePath() + " " + done + " 字节");
+                return "{\"ok\":true,\"name\":" + q(fileName) + ",\"size\":" + done
+                        + ",\"path\":" + q(out.getAbsolutePath()) + "}";
+            } catch (Throwable e) {
+                String msg = e.getClass().getSimpleName() + ": " + e.getMessage();
+                log("UPD", "下载失败 " + msg);
+                return "{\"ok\":false,\"error\":" + q(msg) + "}";
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }
+
+        /** 调起系统安装器 */
+        @JavascriptInterface
+        public void installUpdate(String fileName) {
+            log("UPD", "准备安装 " + fileName);
+            try {
+                if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+                    log("UPD", "没有「安装未知应用」权限，跳去设置页");
+                    toast("请先允许本应用安装应用");
+                    Intent i = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:" + getPackageName()));
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                    return;
+                }
+                Uri uri = Uri.parse("content://" + UpdateProvider.AUTHORITY + "/" + fileName);
+                Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setDataAndType(uri, "application/vnd.android.package-archive");
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                log("UPD", "已调起安装器");
+            } catch (Throwable e) {
+                log("UPD", "安装失败 " + e);
+                toast("安装失败：" + e.getMessage());
+            }
+        }
+
+        @JavascriptInterface
+        public void openUrl(String url) {
+            log("UPD", "打开链接 " + url);
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Throwable e) {
+                log("UPD", "打开失败 " + e);
+                toast("没有可用的浏览器");
+            }
+        }
+
+        @JavascriptInterface
         public void toast(String msg) {
             final String m = msg;
             ui.post(new Runnable() {
@@ -573,6 +726,53 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (web != null && web.canGoBack()) web.goBack();
         else super.onBackPressed();
+    }
+
+    private static String httpGet(String url) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            c.setRequestProperty("User-Agent", "fkmiui-update-check");
+            c.setRequestProperty("Accept", "application/vnd.github+json");
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(15000);
+            int code = c.getResponseCode();
+            if (code != 200) throw new Exception("HTTP " + code);
+            InputStream in = c.getInputStream();
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            in.close();
+            return new String(bos.toByteArray(), "UTF-8");
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    /** 只比数字段：v1.3 > v1.2.9 */
+    private static int compareVersion(String a, String b) {
+        int[] x = nums(a), y = nums(b);
+        int len = Math.max(x.length, y.length);
+        for (int i = 0; i < len; i++) {
+            int p = i < x.length ? x[i] : 0;
+            int q2 = i < y.length ? y[i] : 0;
+            if (p != q2) return p > q2 ? 1 : -1;
+        }
+        return 0;
+    }
+
+    private static int[] nums(String s) {
+        if (s == null) return new int[0];
+        String t = s.replaceAll("[^0-9.]", "");
+        String[] parts = t.split("\\.");
+        ArrayList<Integer> out = new ArrayList<>();
+        for (String p : parts) {
+            if (p.isEmpty()) continue;
+            try { out.add(Integer.parseInt(p)); } catch (Throwable ignored) { }
+        }
+        int[] r = new int[out.size()];
+        for (int i = 0; i < r.length; i++) r[i] = out.get(i);
+        return r;
     }
 
     private static String q(String s) {

@@ -582,3 +582,16 @@ main { padding: 2px 0 8px; }
   word-break: break-all;
   -webkit-overflow-scrolling: touch;
 }
+
+.notes {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: var(--r-m);
+  background: var(--surface-c);
+  color: var(--on-surface-var);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  max-height: 190px;
+  overflow: auto;
+}
