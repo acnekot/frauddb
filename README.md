@@ -58,7 +58,10 @@ call_forwarding(_id, reason, enabled, timestamp)
 
 **安装 APK**
 
-从 [Releases](https://github.com/acnekot/frauddb/releases) 下载 `fkmiui-*.apk` 安装。包名 `com.catsuki.fkmiui`。
+从 [Releases](https://github.com/acnekot/frauddb/releases) 下载最新的 `fkmiui-*.apk` 安装，包名 `com.catsuki.frauddb`。
+
+旧版本不再单独提供下载，历史版本留在 tag 里。包名从 `fkmiui` 改成了 `frauddb`，
+属于另一个应用，装新版前请先卸载旧版（旧版里保存的数据集不会迁移）。
 
 **读取数据库**
 
@@ -123,8 +126,9 @@ call_forwarding(_id, reason, enabled, timestamp)
 
 ## 全局水印
 
-铺满整个界面的一层斜向淡色文字，内容是仓库名 `frauddb`，`pointer-events: none` 不挡点击。
-默认开启，可在「更多 → 显示」里关掉。截图或录屏时能带上出处。
+铺满整个界面的一层斜向淡色文字，内容是仓库名 `frauddb`，`pointer-events: none` 不挡操作。
+
+水印是**强制显示**的，界面上不提供关闭入口。
 
 ## 实现说明
 

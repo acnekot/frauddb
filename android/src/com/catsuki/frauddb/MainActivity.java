@@ -1,4 +1,4 @@
-package com.catsuki.fkmiui;
+package com.catsuki.frauddb;
 
 import android.Manifest;
 import android.app.Activity;
@@ -665,7 +665,7 @@ public class MainActivity extends Activity {
         private static final String DB_NAME = "fraud_detection_data.db";
 
         private Uri storeTree() {
-            String s2 = getSharedPreferences("fkmiui", MODE_PRIVATE).getString("storeTree", "");
+            String s2 = getSharedPreferences("frauddb", MODE_PRIVATE).getString("storeTree", "");
             return s2 == null || s2.isEmpty() ? null : Uri.parse(s2);
         }
 
@@ -748,7 +748,7 @@ public class MainActivity extends Activity {
         }
 
         private boolean persistEnabled() {
-            return getSharedPreferences("fkmiui", MODE_PRIVATE).getBoolean("persist", false);
+            return getSharedPreferences("frauddb", MODE_PRIVATE).getBoolean("persist", false);
         }
 
         @JavascriptInterface
@@ -780,7 +780,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String setPersist(boolean on) {
-            getSharedPreferences("fkmiui", MODE_PRIVATE).edit().putBoolean("persist", on).apply();
+            getSharedPreferences("frauddb", MODE_PRIVATE).edit().putBoolean("persist", on).apply();
             log("SAVE", "持久化开关 → " + on);
             if (!on) {
                 boolean removed = persistedDb().delete();
@@ -1052,7 +1052,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String resetStoreDir() {
-            getSharedPreferences("fkmiui", MODE_PRIVATE).edit().remove("storeTree").apply();
+            getSharedPreferences("frauddb", MODE_PRIVATE).edit().remove("storeTree").apply();
             log("SAVE", "存储位置恢复为应用私有目录");
             return persistInfo();
         }
@@ -1374,7 +1374,7 @@ public class MainActivity extends Activity {
             } catch (Throwable e) {
                 log("SAVE", "持久化目录权限失败 " + e);
             }
-            getSharedPreferences("fkmiui", MODE_PRIVATE).edit()
+            getSharedPreferences("frauddb", MODE_PRIVATE).edit()
                     .putString("storeTree", tree.toString()).apply();
             log("SAVE", "存储位置改为 " + tree);
             if (web != null) {

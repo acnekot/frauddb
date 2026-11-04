@@ -570,13 +570,7 @@
         '</span>' +
         '<span class="sw' + (on ? ' on' : '') + '"><i></i></span>' +
       '</button>' +
-      '<button class="item" data-act="wmToggle">' +
-        ic('scan') +
-        '<span class="lbl">全局水印' +
-          '<small>' + (s.wm ? '铺满屏幕，截图也带出处' : '已关闭，截图不带水印') + '</small>' +
-        '</span>' +
-        '<span class="sw' + (s.wm ? ' on' : '') + '"><i></i></span>' +
-      '</button></div>';
+      '</div>';
   }
 
   function aboutPanel() {
@@ -747,7 +741,6 @@
   function renderWatermark() {
     var el = document.getElementById('wm');
     if (!el) return;
-    if (!s.wm) { el.style.display = 'none'; el.innerHTML = ''; return; }
     el.style.display = 'flex';
     if (el.childElementCount) return;
     var text = 'frauddb';
@@ -1333,11 +1326,6 @@
       else if (act === 'check') doCheck(false);
       else if (act === 'doupdate') doDownload();
       else if (act === 'openpage') { if (window.Android && Android.openUrl) Android.openUrl(s.update.page); }
-      else if (act === 'wmToggle') {
-        setWm(!s.wm);
-        toast(s.wm ? '已开启水印' : '已关闭水印');
-        render();
-      }
       else if (act === 'repo') {
         if (window.Android && Android.openUrl) Android.openUrl('https://github.com/acnekot/frauddb');
         else toast('github.com/acnekot/frauddb');
@@ -1502,7 +1490,6 @@
     s.persist = persistInfo();
     s.reveal = getReveal();
     s.mask = getMask();
-    s.wm = getWm();
     renderWatermark();
     if (s.reveal) {
       setTimeout(function () { loadCallLog(); loadContacts(); }, 300);

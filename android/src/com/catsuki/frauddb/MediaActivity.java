@@ -1,4 +1,4 @@
-package com.catsuki.fkmiui;
+package com.catsuki.frauddb;
 
 import android.app.Activity;
 import android.graphics.Bitmap;

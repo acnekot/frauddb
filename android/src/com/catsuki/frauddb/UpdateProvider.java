@@ -1,4 +1,4 @@
-package com.catsuki.fkmiui;
+package com.catsuki.frauddb;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
@@ -12,7 +12,7 @@ import java.io.FileNotFoundException;
 /** 只用来把下载好的 APK 通过 content:// 交给系统安装器，避免 FileUriExposedException */
 public class UpdateProvider extends ContentProvider {
 
-    public static final String AUTHORITY = "com.catsuki.fkmiui.updates";
+    public static final String AUTHORITY = "com.catsuki.frauddb.updates";
 
     @Override
     public boolean onCreate() {

@@ -858,3 +858,16 @@ img, video, canvas, pre, table {
   color: var(--on-surface);
   font-weight: 600;
 }
+
+/* ---------- 水印：强制、加大 ---------- */
+.wm {
+  opacity: .07;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: .5px;
+}
+
+.wm span {
+  width: 196px;
+  height: 112px;
+}

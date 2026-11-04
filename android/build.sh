@@ -29,8 +29,8 @@ echo "[2/6] aapt2 link"
 
 echo "[3/6] javac"
 javac -nowarn -source 8 -target 8 -bootclasspath "$AJ" -d "$OUT/classes" \
-  "$OUT/gen/com/catsuki/fkmiui/R.java" \
-  "$ROOT"/android/src/com/catsuki/fkmiui/*.java
+  "$OUT/gen/com/catsuki/frauddb/R.java" \
+  "$ROOT"/android/src/com/catsuki/frauddb/*.java
 
 echo "[4/6] d8"
 "$BT/d8" --lib "$AJ" --min-api 26 --output "$OUT/dex" $(find "$OUT/classes" -name '*.class' | tr '\n' ' ')
