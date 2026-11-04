@@ -98,6 +98,8 @@ call_forwarding(_id, reason, enabled, timestamp)
 
 root 读不到东西时，先看日志再猜原因喵。
 
+「更多 → 诊断 → 布局诊断」会立刻量一次页面宽度，列出把页面撑宽的元素喵。
+
 「更多 → 诊断 → 跑一次 root 自检」会依次执行 `id`、`getenforce`、`su -v`、`su -c id`、
 `su -c ls -ld /data/misc/user/0/securitycenter`、`su -c ls -l <库文件>`、列出已装的 root 管理器、
 以及 `ksud -V`，每一步都记录**退出码、耗时、stdout 字节数、预览、stderr**喵。
@@ -109,6 +111,7 @@ root 读不到东西时，先看日志再猜原因喵。
 - 六个候选路径的 `exists` / `canRead` / `size` / 直读结果
 - 权限申请结果、MediaStore 查询数量、文件选择器返回
 - WebView 里的 JS 报错（`console.log` / 异常都会进来）
+- **布局诊断**：每次渲染后量一次 `scrollWidth` 与 `innerWidth`，一旦有元素超宽，就把它的选择器和左右边界写进日志喵
 
 日志写到 `/data/data/com.catsuki.fkmiui/files/logs/frauddb.log`，超过 512KB 自动轮转成 `.1.log`喵。
 在「诊断日志」页可以复制、导出、清空喵。

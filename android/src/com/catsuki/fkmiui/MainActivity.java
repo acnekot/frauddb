@@ -397,6 +397,11 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void webLog(String tag, String msg) {
+            log(tag == null || tag.isEmpty() ? "WEB" : tag, msg == null ? "" : msg);
+        }
+
+        @JavascriptInterface
         public String logs() {
             ArrayList<String> lines = snapshot();
             StringBuilder sb = new StringBuilder("{\"file\":").append(q(logFile.getAbsolutePath()))

@@ -80,6 +80,8 @@ body {
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: contain;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
@@ -249,6 +251,7 @@ main { padding: 2px 0 8px; }
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  min-width: 0;
   padding: 11px 14px;
   position: relative;
 }
@@ -282,16 +285,23 @@ main { padding: 2px 0 8px; }
   font-weight: 600;
   letter-spacing: -.1px;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
+}
+
+.row .t1 .txt {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .row .t2 {
   font-size: 13px;
   color: var(--on-surface-var);
   margin-top: 1px;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .row .t2 b { color: var(--on-surface); font-weight: 600; }
@@ -301,7 +311,8 @@ main { padding: 2px 0 8px; }
   color: var(--on-surface-var);
   opacity: .82;
   margin-top: 3px;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .row .tm {
@@ -315,6 +326,7 @@ main { padding: 2px 0 8px; }
 .mono {
   font-family: ui-monospace, "JetBrains Mono", "Droid Sans Mono", monospace;
   letter-spacing: -.2px;
+  overflow-wrap: anywhere;
 }
 
 .badge {
@@ -342,6 +354,7 @@ main { padding: 2px 0 8px; }
   display: flex;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
   padding: 11px 14px 9px;
   font-size: 12.5px;
   color: var(--on-surface-var);
@@ -357,7 +370,11 @@ main { padding: 2px 0 8px; }
 }
 
 .kv .k { color: var(--on-surface-var); font-size: 12px; }
-.kv .v { word-break: break-all; font-variant-numeric: tabular-nums; }
+.kv .v {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ---------- 统计 ---------- */
 .panel {
@@ -473,8 +490,14 @@ main { padding: 2px 0 8px; }
 
 .item:active { background: var(--surface-c); }
 .item .ic { width: 22px; height: 22px; flex: none; color: var(--on-surface-var); }
-.item .lbl { flex: 1; }
-.item .lbl small { display: block; font-size: 12px; color: var(--on-surface-var); font-weight: 400; }
+.item .lbl { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.item .lbl small {
+  display: block;
+  font-size: 12px;
+  color: var(--on-surface-var);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
 .item .chev { width: 18px; height: 18px; color: var(--on-surface-var); opacity: .7; }
 .item:disabled { opacity: .45; }
 
@@ -561,6 +584,7 @@ main { padding: 2px 0 8px; }
 /* ---------- 诊断日志 ---------- */
 .verdict {
   margin: 0 12px 10px;
+  overflow-wrap: anywhere;
   padding: 12px 14px;
   border-radius: var(--r-m);
   background: var(--primary-container);
@@ -596,6 +620,7 @@ main { padding: 2px 0 8px; }
 
 .notes {
   margin: 10px 0;
+  overflow-wrap: anywhere;
   padding: 10px 12px;
   border-radius: var(--r-m);
   background: var(--surface-c);
@@ -615,4 +640,19 @@ main, .panel, .group, .tcard, .topbar, .chips, .item, .notes {
 
 .row, .body, .t1, .t2, .t3, .lbl {
   min-width: 0;
+}
+
+
+/* ---------- 换行兜底：任何长串都在容器内断开 ---------- */
+.tcard > .th span,
+.bar-row .nm,
+.meta b,
+.meta span,
+.logpath {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+img, video, canvas, pre, table {
+  max-width: 100%;
 }

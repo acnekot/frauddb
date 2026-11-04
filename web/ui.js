@@ -311,7 +311,7 @@
     return '<div class="row' + (e.gone ? ' gone' : '') + '"' + style + '>' +
       ic(k.icon) +
       '<div class="body">' +
-        '<div class="t1">' + title + (e.gone ? '<span class="badge">已删除</span>' : '') + '</div>' +
+        '<div class="t1"><span class="txt">' + title + '</span>' + (e.gone ? '<span class="badge">已删除</span>' : '') + '</div>' +
         (sub ? '<div class="t2">' + sub + '</div>' : '') +
         (extra ? '<div class="t3 mono">' + extra + '</div>' : '') +
       '</div>' +
@@ -479,6 +479,7 @@
       '</div>' +
       '<div class="panel"><h2>诊断</h2>' +
         item('selftest', 'scan', '跑一次 root 自检', '依次执行 id / getenforce / su -v / su -c id') +
+        item('layout', 'scan', '布局诊断', '找出把页面撑宽的元素并写进日志') +
         item('logs', 'info', '诊断日志', 'su 调用、返回码、SELinux、路径探测') +
         item('logcopy', 'download', '复制全部日志', '直接贴出来就能看') +
       '</div>' +
@@ -572,6 +573,45 @@
     }, 20);
   }
 
+  function logToNative(tag, msg) {
+    if (window.Android && Android.webLog) {
+      try { Android.webLog(tag, msg); } catch (e) { }
+    }
+  }
+
+  /** 量一下有没有元素超出视口，超了就把具体元素报出来 */
+  function measureLayout(always) {
+    var vw = window.innerWidth || 0;
+    var de = document.documentElement;
+    var sw = Math.max(de ? de.scrollWidth : 0, document.body ? document.body.scrollWidth : 0);
+    var bad = [];
+    if (sw > vw + 1) {
+      var els = document.querySelectorAll('body *');
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        var r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        if (r.right > vw + 1 || r.left < -1) {
+          var cls = (typeof el.className === 'string' ? el.className : '').split(' ')[0];
+          bad.push(el.tagName.toLowerCase() + (cls ? '.' + cls : '') +
+            '[l=' + Math.round(r.left) + ' r=' + Math.round(r.right) + ']');
+          if (bad.length >= 12) break;
+        }
+      }
+    }
+    if (always || bad.length) {
+      logToNative('LAYOUT', 'viewport=' + vw + ' scrollWidth=' + sw +
+        (bad.length ? ' 超宽元素: ' + bad.join(' | ') : ' 没有超宽元素'));
+    }
+    return { vw: vw, sw: sw, bad: bad };
+  }
+
+  function layoutCheck() {
+    var r = measureLayout(true);
+    toast(r.bad.length ? '发现 ' + r.bad.length + ' 个超宽元素，已写进日志' : '布局正常，没有横向溢出');
+    if (s.view === 'more') render();
+  }
+
   function render() {
     try {
       var tb = document.querySelector('.topbar');
@@ -592,6 +632,7 @@
     else if (s.view === 'stats') renderStats();
     else if (s.view === 'logs') renderLogs();
     else renderMore();
+    setTimeout(function () { measureLayout(false); }, 60);
   }
 
   /* ---------- 载入 ---------- */
@@ -741,6 +782,7 @@
       else if (act === 'check') doCheck(false);
       else if (act === 'doupdate') doDownload();
       else if (act === 'openpage') { if (window.Android && Android.openUrl) Android.openUrl(s.update.page); }
+      else if (act === 'layout') layoutCheck();
       else if (act === 'selftest') runSelfTest();
       else if (act === 'logs') { setView('logs'); render(); }
       else if (act === 'logcopy') { if (window.Android && Android.copyText) Android.copyText(logText().lines.join('\n')); else toast('需要在 App 内运行'); }
@@ -781,6 +823,7 @@
   window.onBridgeError = function (m) { toast(m || '读取失败'); };
   window.appAutoLoad = autoLoad;
   window.appRender = function (v) { if (v) setView(v); render(); };
+  window.appLayout = function () { return measureLayout(true); };
 
   document.addEventListener('DOMContentLoaded', function () {
     bind();
