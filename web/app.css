@@ -70,11 +70,9 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
-html, body {
+body {
   margin: 0;
   width: 100%;
-  max-width: 100%;
-  overflow-x: hidden;
   background: var(--surface);
   color: var(--on-surface);
   font-family: "MiSans", "HarmonyOS Sans SC", "Noto Sans SC", system-ui, -apple-system, sans-serif;
