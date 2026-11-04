@@ -720,3 +720,95 @@ img, video, canvas, pre, table {
   background: var(--on-primary);
   transform: translateX(20px);
 }
+
+/* ---------- 打码（点一下显示） ---------- */
+.sp {
+  display: inline-block;
+  border-radius: 7px;
+  padding: 0 5px;
+  background: var(--surface-highest);
+  color: var(--on-surface);
+  letter-spacing: .5px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .18s, color .18s, padding .18s;
+}
+
+.sp.on {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+/* ---------- MD3 细化 ---------- */
+.panel {
+  background: var(--surface-c);
+  border-radius: 24px;
+  padding: 18px 16px;
+  border: 1px solid color-mix(in srgb, var(--outline-var) 45%, transparent);
+}
+
+.panel h2 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  color: var(--on-surface-var);
+  margin: 0 0 12px;
+}
+
+.item {
+  min-height: 56px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  transition: background .15s;
+}
+
+.item + .item::before { left: 14px; right: 14px; }
+
+.item:active {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.chip {
+  height: 32px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.chip.on {
+  background: var(--secondary-container);
+}
+
+.row .ic {
+  border-radius: 14px;
+}
+
+.tcard {
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--outline-var) 45%, transparent);
+}
+
+.tcard > .th {
+  font-size: 12px;
+  letter-spacing: .2px;
+  padding: 12px 16px 10px;
+}
+
+.meta {
+  border-radius: 24px;
+}
+
+.meta div {
+  padding: 14px 8px;
+}
+
+.notes,
+.verdict {
+  border-radius: 16px;
+}
+
+.gbtn:active {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+}

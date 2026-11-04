@@ -348,12 +348,12 @@
         var bits = [d0.op ? esc(d0.op) : '', durText(d0.dur),
           d0.virt ? '虚拟运营商' : '', d0.fraud ? '<b>涉诈标记</b>' : ''].filter(Boolean);
         if (pc && pc.it.number) {
-          bits.push('号码 <b>' + esc(maskPhone(pc.it.number)) + '</b>' +
-            (pc.it.name ? '（' + esc(maskName(pc.it.name)) + '）' : ''));
+          bits.push('号码 ' + sp(pc.it.number, maskPhone(pc.it.number), true) +
+            (pc.it.name ? '（' + sp(pc.it.name, maskName(pc.it.name)) + '）' : ''));
         }
         sub = bits.join(' · ');
         var kv2 = [];
-        if (d0.md5) kv2.push('号码摘要 <span class="mono">' + esc(maskHash(d0.md5)) + '</span>');
+        if (d0.md5) kv2.push('号码摘要 ' + sp(d0.md5, maskHash(d0.md5), true));
         if (pc) {
           var srcTag = pc.how === 'contact' ? '通讯录'
             : pc.how === 'time' ? '按时间匹配' : '通话记录';
@@ -458,8 +458,10 @@
       t.columns.forEach(function (c, i) {
         if (c === '_id') return;
         var v = flat(r.values[i]);
-        if (s.mask && /md5|hash|number|tel/i.test(c)) v = maskHash(v);
-        kv += '<div class="k">' + esc(c) + '</div><div class="v">' + esc(v) + '</div>';
+        var cell2 = (s.mask && /md5|hash|number|tel/i.test(c))
+          ? sp(v, maskHash(v), true)
+          : esc(v);
+        kv += '<div class="k">' + esc(c) + '</div><div class="v">' + cell2 + '</div>';
       });
       var head = timeCol >= 0 && typeof r.values[timeCol] === 'number'
         ? dayKey(r.values[timeCol]).slice(5).replace('-', '/') + ' ' + hms(r.values[timeCol]) : '';
@@ -564,7 +566,7 @@
       '<button class="item" data-act="maskToggle">' +
         ic('info') +
         '<span class="lbl">敏感信息打码' +
-          '<small>' + (on ? '号码、联系人、哈希都只显示首尾' : '当前显示完整内容，注意截图与录屏') + '</small>' +
+          '<small>' + (on ? '号码只留前三位，名称隐藏，点一下可临时显示' : '当前显示完整内容，注意截图与录屏') + '</small>' +
         '</span>' +
         '<span class="sw' + (on ? ' on' : '') + '"><i></i></span>' +
       '</button></div>';
@@ -715,28 +717,37 @@
     try { localStorage.setItem('fkmiui.mask', v ? '1' : '0'); } catch (e) { }
   }
 
-  function maskPhone(v) {
-    if (!s.mask) return v;
-    var d = String(v == null ? '' : v);
-    if (d.length <= 4) return d;
-    if (d.length >= 11) return d.slice(0, 3) + '****' + d.slice(-4);
-    if (d.length >= 7) return d.slice(0, 3) + '***' + d.slice(-3);
-    return d.slice(0, 2) + '**' + d.slice(-2);
+  function dots(n, ch) {
+    var s2 = '';
+    for (var i = 0; i < n; i++) s2 += (ch || '●');
+    return s2;
   }
 
+  /** 只显示前三位，其余用圆点 */
+  function maskPhone(v) {
+    var d = String(v == null ? '' : v);
+    if (d.length <= 3) return d;
+    return d.slice(0, 3) + dots(Math.max(3, d.length - 3));
+  }
+
+  /** 名称整体遮住 */
   function maskName(v) {
-    if (!s.mask) return v;
     var x = String(v == null ? '' : v);
-    if (!x) return x;
-    if (x.length === 1) return x + '*';
-    return x.charAt(0) + new Array(x.length).join('*');
+    return x ? dots(Math.min(4, Math.max(2, x.length)), '●') : x;
   }
 
   function maskHash(v) {
-    if (!s.mask) return v;
     var x = String(v == null ? '' : v);
-    if (x.length <= 8) return x.slice(0, 2) + '…';
-    return x.slice(0, 6) + '…' + x.slice(-4);
+    if (x.length <= 8) return x.slice(0, 2) + dots(4, '●');
+    return x.slice(0, 6) + dots(6, '●');
+  }
+
+  /** 打码文本：「点一下显示」，再点收回 */
+  function sp(real, masked, mono) {
+    var r = String(real == null ? '' : real);
+    if (!s.mask) return (mono ? '<span class="mono">' : '<span>') + esc(r) + '</span>';
+    return '<span class="sp' + (mono ? ' mono' : '') + '" data-real="' + esc(r) +
+      '" data-masked="' + esc(masked) + '">' + esc(masked) + '</span>';
   }
 
   function getReveal() {
@@ -1234,6 +1245,13 @@
   /* ---------- 交互 ---------- */
   function bind() {
     document.addEventListener('click', function (ev) {
+      var spEl = ev.target.closest('.sp');
+      if (spEl) {
+        var on = spEl.classList.toggle('on');
+        spEl.textContent = on ? spEl.getAttribute('data-real')
+          : spEl.getAttribute('data-masked');
+        return;
+      }
       var thumb = ev.target.closest('img[data-uri]');
       if (thumb) {
         var uri = thumb.getAttribute('data-uri');
