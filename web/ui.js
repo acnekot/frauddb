@@ -53,7 +53,7 @@
     perms: null, callIndex: {}, callIndexRaw: {}, callList: [],
     persist: { enabled: false }, lastB64: '',
     reveal: false, contactIndex: {}, contactIndexRaw: {}, bookCount: 0,
-    dbs: [], saved: [], savedInfo: {}
+    dbs: [], saved: [], savedInfo: {}, mask: true
   };
 
   /* ---------- 工具 ---------- */
@@ -348,12 +348,12 @@
         var bits = [d0.op ? esc(d0.op) : '', durText(d0.dur),
           d0.virt ? '虚拟运营商' : '', d0.fraud ? '<b>涉诈标记</b>' : ''].filter(Boolean);
         if (pc && pc.it.number) {
-          bits.push('号码 <b>' + esc(pc.it.number) + '</b>' +
-            (pc.it.name ? '（' + esc(pc.it.name) + '）' : ''));
+          bits.push('号码 <b>' + esc(maskPhone(pc.it.number)) + '</b>' +
+            (pc.it.name ? '（' + esc(maskName(pc.it.name)) + '）' : ''));
         }
         sub = bits.join(' · ');
         var kv2 = [];
-        if (d0.md5) kv2.push('号码摘要 ' + esc(String(d0.md5).slice(0, 18)) + '…');
+        if (d0.md5) kv2.push('号码摘要 <span class="mono">' + esc(maskHash(d0.md5)) + '</span>');
         if (pc) {
           var srcTag = pc.how === 'contact' ? '通讯录'
             : pc.how === 'time' ? '按时间匹配' : '通话记录';
@@ -457,7 +457,9 @@
       var kv = '';
       t.columns.forEach(function (c, i) {
         if (c === '_id') return;
-        kv += '<div class="k">' + esc(c) + '</div><div class="v">' + esc(flat(r.values[i])) + '</div>';
+        var v = flat(r.values[i]);
+        if (s.mask && /md5|hash|number|tel/i.test(c)) v = maskHash(v);
+        kv += '<div class="k">' + esc(c) + '</div><div class="v">' + esc(v) + '</div>';
       });
       var head = timeCol >= 0 && typeof r.values[timeCol] === 'number'
         ? dayKey(r.values[timeCol]).slice(5).replace('-', '/') + ' ' + hms(r.values[timeCol]) : '';
@@ -556,6 +558,18 @@
     return '<div class="panel"><h2>版本</h2>' + body + '</div>';
   }
 
+  function displayPanel() {
+    var on = !!s.mask;
+    return '<div class="panel"><h2>显示</h2>' +
+      '<button class="item" data-act="maskToggle">' +
+        ic('info') +
+        '<span class="lbl">敏感信息打码' +
+          '<small>' + (on ? '号码、联系人、哈希都只显示首尾' : '当前显示完整内容，注意截图与录屏') + '</small>' +
+        '</span>' +
+        '<span class="sw' + (on ? ' on' : '') + '"><i></i></span>' +
+      '</button></div>';
+  }
+
   function permPanel() {
     var p = s.perms || {};
     var mediaOk = !!p.images;
@@ -582,6 +596,7 @@
       versionPanel() +
       persistPanel() +
       revealPanel() +
+      displayPanel() +
       permPanel() +
       '<div class="panel"><h2>读取</h2>' +
         item('auto', 'folder', '从系统路径读取', hasBridge ? '自动尝试五个常见位置，需要 root' : '需要在 App 内运行', !hasBridge) +
@@ -689,6 +704,39 @@
       setView('logs');
       render();
     }, 20);
+  }
+
+  function getMask() {
+    try { return localStorage.getItem('fkmiui.mask') !== '0'; } catch (e) { return true; }
+  }
+
+  function setMask(v) {
+    s.mask = !!v;
+    try { localStorage.setItem('fkmiui.mask', v ? '1' : '0'); } catch (e) { }
+  }
+
+  function maskPhone(v) {
+    if (!s.mask) return v;
+    var d = String(v == null ? '' : v);
+    if (d.length <= 4) return d;
+    if (d.length >= 11) return d.slice(0, 3) + '****' + d.slice(-4);
+    if (d.length >= 7) return d.slice(0, 3) + '***' + d.slice(-3);
+    return d.slice(0, 2) + '**' + d.slice(-2);
+  }
+
+  function maskName(v) {
+    if (!s.mask) return v;
+    var x = String(v == null ? '' : v);
+    if (!x) return x;
+    if (x.length === 1) return x + '*';
+    return x.charAt(0) + new Array(x.length).join('*');
+  }
+
+  function maskHash(v) {
+    if (!s.mask) return v;
+    var x = String(v == null ? '' : v);
+    if (x.length <= 8) return x.slice(0, 2) + '…';
+    return x.slice(0, 6) + '…' + x.slice(-4);
   }
 
   function getReveal() {
@@ -1218,6 +1266,11 @@
       else if (act === 'check') doCheck(false);
       else if (act === 'doupdate') doDownload();
       else if (act === 'openpage') { if (window.Android && Android.openUrl) Android.openUrl(s.update.page); }
+      else if (act === 'maskToggle') {
+        setMask(!s.mask);
+        toast(s.mask ? '已开启打码' : '已关闭打码，注意他人可见');
+        render();
+      }
       else if (act === 'revealToggle') {
         var nv = !s.reveal;
         setReveal(nv);
@@ -1372,6 +1425,7 @@
     s.perms = loadPerms();
     s.persist = persistInfo();
     s.reveal = getReveal();
+    s.mask = getMask();
     if (s.reveal) {
       setTimeout(function () { loadCallLog(); loadContacts(); }, 300);
     }
