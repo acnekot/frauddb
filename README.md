@@ -50,6 +50,9 @@ call_forwarding(_id, reason, enabled, timestamp)
 
 字段名从 `sqlite_master` 的建表语句里读，未知表也能在「表格」页展开。
 
+`tel_number_md5` 的算法已经逆出来了，见 [docs/md5-algorithm.md](docs/md5-algorithm.md)：
+号码原样取 UTF-8 字节做 MD5，小写十六进制，无盐、无归一化。
+
 ## 使用
 
 **安装 APK**
