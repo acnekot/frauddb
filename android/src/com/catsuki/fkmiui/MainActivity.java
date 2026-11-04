@@ -377,6 +377,128 @@ public class MainActivity extends Activity {
             return sb.append(']').toString();
         }
 
+        /** 相册里的截图与录屏，返回真实 MediaStore 条目 */
+        @JavascriptInterface
+        public String media() {
+            log("MEDIA", "开始扫描相册（图片 + 视频）");
+            StringBuilder out = new StringBuilder("[");
+            int count = 0;
+            count += queryMedia(out, count, true);
+            count += queryMedia(out, count, false);
+            out.append(']');
+            log("MEDIA", "扫到 " + count + " 个媒体条目");
+            return out.toString();
+        }
+
+        private int queryMedia(StringBuilder out, int start, boolean images) {
+            int added = 0;
+            Cursor c = null;
+            try {
+                String sel;
+                String[] proj;
+                Uri base;
+                if (images) {
+                    base = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                    proj = new String[]{
+                            MediaStore.Images.Media._ID,
+                            MediaStore.Images.Media.DISPLAY_NAME,
+                            MediaStore.Images.Media.DATE_ADDED,
+                            MediaStore.Images.Media.SIZE};
+                    sel = MediaStore.Images.Media.DISPLAY_NAME + " LIKE 'Screenshot%' OR "
+                            + MediaStore.Images.Media.DISPLAY_NAME + " LIKE '%截图%' OR "
+                            + MediaStore.Images.Media.DISPLAY_NAME + " LIKE '%截屏%'";
+                } else {
+                    base = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+                    proj = new String[]{
+                            MediaStore.Video.Media._ID,
+                            MediaStore.Video.Media.DISPLAY_NAME,
+                            MediaStore.Video.Media.DATE_ADDED,
+                            MediaStore.Video.Media.SIZE,
+                            MediaStore.Video.Media.DURATION};
+                    sel = MediaStore.Video.Media.DISPLAY_NAME + " LIKE '%Screenrecord%' OR "
+                            + MediaStore.Video.Media.DISPLAY_NAME + " LIKE '%screenrecord%' OR "
+                            + MediaStore.Video.Media.DISPLAY_NAME + " LIKE '%录屏%' OR "
+                            + MediaStore.Video.Media.DISPLAY_NAME + " LIKE '%屏幕录制%'";
+                }
+                c = getContentResolver().query(base, proj, sel, null, "date_added DESC");
+                if (c == null) {
+                    log("MEDIA", (images ? "图片" : "视频") + "查询返回空游标");
+                    return 0;
+                }
+                int iId = c.getColumnIndex(proj[0]);
+                int iName = c.getColumnIndex(proj[1]);
+                int iAdded = c.getColumnIndex(proj[2]);
+                int iSize = c.getColumnIndex(proj[3]);
+                int iDur = images ? -1 : c.getColumnIndex(MediaStore.Video.Media.DURATION);
+                while (c.moveToNext()) {
+                    long id = c.getLong(iId);
+                    String name = c.getString(iName);
+                    long addedS = c.getLong(iAdded);
+                    long size = c.getLong(iSize);
+                    long dur = iDur >= 0 ? c.getLong(iDur) : 0;
+                    Uri uri = android.content.ContentUris.withAppendedId(base, id);
+                    if (out.length() > 1) out.append(',');
+                    out.append("{\"kind\":\"").append(images ? "image" : "video").append("\",")
+                            .append("\"id\":").append(id).append(',')
+                            .append("\"name\":").append(q(name)).append(',')
+                            .append("\"added\":").append(addedS).append(',')
+                            .append("\"size\":").append(size).append(',')
+                            .append("\"dur\":").append(dur).append(',')
+                            .append("\"uri\":").append(q(uri.toString())).append('}');
+                    added++;
+                }
+                log("MEDIA", (images ? "图片" : "视频") + " " + added + " 条");
+            } catch (Throwable e) {
+                log("MEDIA", (images ? "图片" : "视频") + "查询失败：" + e);
+            } finally {
+                if (c != null) c.close();
+            }
+            return added;
+        }
+
+        /** 取一张缩略图，返回 base64 jpeg（空字符串表示失败） */
+        @JavascriptInterface
+        public String thumb(String uriStr) {
+            try {
+                Uri uri = Uri.parse(uriStr);
+                android.graphics.Bitmap bmp = null;
+                if (Build.VERSION.SDK_INT >= 29) {
+                    bmp = getContentResolver().loadThumbnail(uri, new android.util.Size(120, 120), null);
+                } else {
+                    long id = Long.parseLong(uri.getLastPathSegment());
+                    boolean isVideo = uriStr.contains("video");
+                    bmp = isVideo
+                            ? MediaStore.Video.Thumbnails.getThumbnail(getContentResolver(), id,
+                            MediaStore.Video.Thumbnails.MINI_KIND, null)
+                            : MediaStore.Images.Thumbnails.getThumbnail(getContentResolver(), id,
+                            MediaStore.Images.Thumbnails.MINI_KIND, null);
+                }
+                if (bmp == null) return "";
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 78, bos);
+                bmp.recycle();
+                return Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP);
+            } catch (Throwable e) {
+                log("MEDIA", "缩略图失败 " + uriStr + " → " + e);
+                return "";
+            }
+        }
+
+        /** 用系统播放器/看图器打开原文件 */
+        @JavascriptInterface
+        public void openMedia(String uriStr, boolean video) {
+            log("MEDIA", "打开原文件 " + uriStr);
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setDataAndType(Uri.parse(uriStr), video ? "video/*" : "image/*");
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Throwable e) {
+                log("MEDIA", "打开失败 " + e);
+                toast("没有能打开该文件的应用");
+            }
+        }
+
         @JavascriptInterface
         public void exportText(String name, String content) {
             log("BRIDGE", "exportText(" + name + ", " + (content == null ? 0 : content.length()) + " 字符)");
@@ -668,15 +790,18 @@ public class MainActivity extends Activity {
     }
 
     private void askPerm() {
-        String p = Build.VERSION.SDK_INT >= 33
-                ? Manifest.permission.READ_MEDIA_IMAGES
-                : Manifest.permission.READ_EXTERNAL_STORAGE;
-        if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) {
-            log("PERM", "申请 " + p);
-            requestPermissions(new String[]{p}, REQ_PERM);
+        String[] ps;
+        if (Build.VERSION.SDK_INT >= 33) {
+            ps = new String[]{Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO};
         } else {
-            log("PERM", p + " 已授予");
+            ps = new String[]{Manifest.permission.READ_EXTERNAL_STORAGE};
         }
+        boolean need = false;
+        for (String p : ps) {
+            if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) need = true;
+            log("PERM", p + (checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED ? " 已授予" : " 待申请"));
+        }
+        if (need) requestPermissions(ps, REQ_PERM);
     }
 
     @Override

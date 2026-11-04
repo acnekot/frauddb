@@ -656,3 +656,34 @@ main, .panel, .group, .tcard, .topbar, .chips, .item, .notes {
 img, video, canvas, pre, table {
   max-width: 100%;
 }
+
+/* ---------- 缩略图 ---------- */
+.row .ic.thumb {
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface-high);
+  position: relative;
+}
+
+.row .ic.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.row .ic.thumb img.fail { visibility: hidden; }
+
+.row .ic.thumb:has(img[data-video="1"])::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translate(-40%, -50%);
+  border-left: 8px solid rgba(255, 255, 255, .92);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .5));
+}

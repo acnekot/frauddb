@@ -46,7 +46,7 @@
 
   var s = {
     db: null, name: '', path: '', src: '',
-    events: [], recovered: [], screens: [], showPair: false,
+    events: [], recovered: [], images: [], videos: [], showPair: false, thumbsDone: {},
     view: 'timeline', filter: 'all', table: null,
     shown: 240, showDeleted: true, tableShown: 80,
     version: '', update: null, checking: false, downloaded: ''
@@ -110,8 +110,37 @@
     var ms = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], +(m[7] || 0)).getTime();
     return { ms: ms, file: name, pkg: (m[8] || '').replace(/\.(jpg|jpeg|png|webp)$/i, '') };
   }
+  function parseVideoName(name) {
+    // Screenrecorder-2026-10-28-16-57-25-123.mp4 / 屏幕录制_20261028_165725.mp4
+    var m = /(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})(?:-(\d{1,3}))?/.exec(name || '');
+    if (m) {
+      return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], +(m[7] || 0)).getTime();
+    }
+    var n = /(\d{4})(\d{2})(\d{2})[_\-](\d{2})(\d{2})(\d{2})/.exec(name || '');
+    if (n) {
+      return new Date(+n[1], +n[2] - 1, +n[3], +n[4], +n[5], +n[6]).getTime();
+    }
+    return 0;
+  }
+
+  function nearest(list, ms, tol) {
+    if (!list || !list.length) return null;
+    var lo = 0, hi = list.length - 1, best = null, bd = Infinity;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1, delta = Math.abs(list[mid].ms - ms);
+      if (delta < bd) { bd = delta; best = list[mid]; }
+      if (list[mid].ms < ms) lo = mid + 1; else hi = mid - 1;
+    }
+    return best && bd <= tol ? { item: best, delta: bd } : null;
+  }
+
+  function pairVideo(ms) {
+    var r = nearest(s.videos, ms, 300000);
+    return r ? r.item : null;
+  }
+
   function pairScreen(ms) {
-    var arr = s.screens;
+    var arr = s.images;
     if (!arr || !arr.length) return null;
     var lo = 0, hi = arr.length - 1, best = null, bd = Infinity;
     while (lo <= hi) {
@@ -265,6 +294,7 @@
   function rowHtml(e) {
     var k = KINDS[e.kind] || { label: e.kind, icon: 'database', tint: null };
     var d0 = e.data || {}, title = k.label, sub = '', extra = '';
+    var thumbUri = '', thumbVideo = false;
     switch (e.kind) {
       case 'shot': {
         var p = s.showPair ? pairScreen(e.t) : null;
@@ -272,13 +302,24 @@
         if (p && p.pkg) { sub = '当时前台 <b>' + esc(p.pkg) + '</b>'; extra = esc(p.file); }
         else if (p) { extra = esc(p.file); }
         else sub = '只记录了时间戳';
+        if (p && p.uri) { thumbUri = p.uri; thumbVideo = false; }
         break;
       }
-      case 'screen':
+      case 'screen': {
+        var v = s.showPair ? pairVideo(d0.start) : null;
         title = '屏幕录制';
         sub = esc(d0.pkg || '未知来源') + ' · ' + durText(d0.dur);
-        extra = hms(d0.start) + ' – ' + hms(d0.end || d0.start) + (d0.active ? ' · 进行中' : '');
+        extra = hms(d0.start) + ' – ' + hms(d0.end || d0.start);
+        if (v) {
+          var diff = (v.dur || 0) - (d0.dur || 0);
+          extra += ' · 文件 ' + esc(v.file) +
+            (v.dur ? '（实际 ' + durText(v.dur) + (Math.abs(diff) > 3000 ? '，差 ' + durText(Math.abs(diff)) : '，一致') + '）' : '');
+          if (v.uri) { thumbUri = v.uri; thumbVideo = true; }
+        } else if (d0.active) {
+          extra += ' · 进行中';
+        }
         break;
+      }
       case 'call':
         title = '通话 · ' + esc(d0.loc || '归属地未知');
         sub = [d0.op ? esc(d0.op) : '', durText(d0.dur), d0.virt ? '虚拟运营商' : '', d0.fraud ? '<b>涉诈标记</b>' : '']
@@ -308,8 +349,11 @@
         break;
     }
     var style = k.tint ? ' style="--kc:var(--k-' + k.tint + ');--kb:var(--k-' + k.tint + '-bg)"' : '';
+    var head = thumbUri
+      ? '<span class="ic thumb"><img data-uri="' + esc(thumbUri) + '" data-video="' + (thumbVideo ? '1' : '0') + '" alt=""></span>'
+      : ic(k.icon);
     return '<div class="row' + (e.gone ? ' gone' : '') + '"' + style + '>' +
-      ic(k.icon) +
+      head +
       '<div class="body">' +
         '<div class="t1"><span class="txt">' + title + '</span>' + (e.gone ? '<span class="badge">已删除</span>' : '') + '</div>' +
         (sub ? '<div class="t2">' + sub + '</div>' : '') +
@@ -470,7 +514,7 @@
       '<div class="panel"><h2>读取</h2>' +
         item('auto', 'folder', '从系统路径读取', hasBridge ? '自动尝试五个常见位置，需要 root' : '需要在 App 内运行', !hasBridge) +
         item('pick', 'download', '选择 db 文件', '系统文件选择器，不需要 root') +
-        (hasBridge ? item('screens', 'scan', '扫描相册补全截图来源', '读取 Screenshots 文件名做配对') : '') +
+        (hasBridge ? item('screens', 'scan', '扫描相册（图片 + 视频）', '配对真实截图与录屏文件，可点开原文件') : '') +
       '</div>' +
       '<div class="panel"><h2>导出</h2>' +
         item('expTxt', 'download', '时间线 TXT', '按天分组的纯文本') +
@@ -612,6 +656,28 @@
     if (s.view === 'more') render();
   }
 
+  function hydrateThumbs() {
+    if (!window.Android || !Android.thumb) return;
+    var imgs = document.querySelectorAll('img[data-uri]:not([data-done])');
+    var queue = [];
+    for (var i = 0; i < imgs.length && queue.length < 60; i++) queue.push(imgs[i]);
+    var at = 0;
+    function next() {
+      if (at >= queue.length) return;
+      var el = queue[at++];
+      if (el.getAttribute('data-done')) { next(); return; }
+      el.setAttribute('data-done', '1');
+      var uri = el.getAttribute('data-uri');
+      try {
+        var b64 = Android.thumb(uri);
+        if (b64) el.src = 'data:image/jpeg;base64,' + b64;
+        else el.classList.add('fail');
+      } catch (e) { el.classList.add('fail'); }
+      setTimeout(next, 16);
+    }
+    next();
+  }
+
   function render() {
     try {
       var tb = document.querySelector('.topbar');
@@ -633,6 +699,7 @@
     else if (s.view === 'logs') renderLogs();
     else renderMore();
     setTimeout(function () { measureLayout(false); }, 60);
+    setTimeout(hydrateThumbs, 80);
   }
 
   /* ---------- 载入 ---------- */
@@ -662,19 +729,37 @@
   }
 
   function loadScreens() {
-    if (!window.Android || !Android.screenshots || s.screens.length) return;
+    if (!window.Android) return;
+    if (s.images.length || s.videos.length) return;
+    var imgs = [], vids = [];
     try {
-      var list = JSON.parse(Android.screenshots() || '[]'), arr = [];
-      list.forEach(function (it) {
-        var p = parseScreenName(it.name || it);
-        if (p) arr.push(p);
-      });
-      arr.sort(function (a, b) { return a.ms - b.ms; });
-      s.screens = arr;
-      s.showPair = arr.length > 0;
-      if (s.view === 'timeline') render();
-      if (arr.length) toast('配对了 ' + arr.length + ' 张截图');
-    } catch (e) { /* 忽略 */ }
+      if (Android.media) {
+        var list = JSON.parse(Android.media() || '[]');
+        list.forEach(function (it) {
+          var ms = 0, name = it.name || '';
+          if (it.kind === 'video') {
+            ms = parseVideoName(name) || (it.added ? it.added * 1000 : 0);
+            if (ms) vids.push({ ms: ms, file: name, uri: it.uri, dur: it.dur || 0, size: it.size || 0 });
+          } else {
+            var p = parseScreenName(name);
+            ms = p ? p.ms : (it.added ? it.added * 1000 : 0);
+            if (ms) imgs.push({ ms: ms, file: name, pkg: p ? p.pkg : '', uri: it.uri, size: it.size || 0 });
+          }
+        });
+      } else if (Android.screenshots) {
+        JSON.parse(Android.screenshots() || '[]').forEach(function (it) {
+          var p = parseScreenName(it.name || it);
+          if (p) imgs.push({ ms: p.ms, file: p.file, pkg: p.pkg, uri: '', size: 0 });
+        });
+      }
+    } catch (e) { toast('扫描相册失败：' + e); }
+    imgs.sort(function (a, b) { return a.ms - b.ms; });
+    vids.sort(function (a, b) { return a.ms - b.ms; });
+    s.images = imgs;
+    s.videos = vids;
+    s.showPair = imgs.length + vids.length > 0;
+    if (s.view === 'timeline') render();
+    if (imgs.length || vids.length) toast('配对了 ' + imgs.length + ' 张截图 / ' + vids.length + ' 段录屏');
   }
 
   function autoLoad() {
@@ -762,6 +847,14 @@
   /* ---------- 交互 ---------- */
   function bind() {
     document.addEventListener('click', function (ev) {
+      var thumb = ev.target.closest('img[data-uri]');
+      if (thumb) {
+        var uri = thumb.getAttribute('data-uri');
+        var isVideo = thumb.getAttribute('data-video') === '1';
+        if (window.Android && Android.openMedia) Android.openMedia(uri, isVideo);
+        else toast('需要在 App 内运行');
+        return;
+      }
       var t = ev.target.closest('[data-act],[data-view]');
       if (!t) return;
       if (t.hasAttribute('data-view')) {
@@ -778,7 +871,7 @@
       else if (act === 'moreTable') { s.tableShown += 80; render(); }
       else if (act === 'auto') autoLoad();
       else if (act === 'pick') pick();
-      else if (act === 'screens') { s.screens = []; loadScreens(); }
+      else if (act === 'screens') { s.images = []; s.videos = []; loadScreens(); }
       else if (act === 'check') doCheck(false);
       else if (act === 'doupdate') doDownload();
       else if (act === 'openpage') { if (window.Android && Android.openUrl) Android.openUrl(s.update.page); }
