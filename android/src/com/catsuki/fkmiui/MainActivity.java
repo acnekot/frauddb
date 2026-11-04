@@ -817,6 +817,189 @@ public class MainActivity extends Activity {
             }
         }
 
+        /* ---------- 多数据集 ---------- */
+
+        private File indexFile() {
+            return new File(new File(getFilesDir(), "imported"), "index.json");
+        }
+
+        private org.json.JSONArray readIndex() {
+            try {
+                if (!indexFile().exists()) return new org.json.JSONArray();
+                String t = new String(drain(new java.io.FileInputStream(indexFile())), "UTF-8");
+                return new org.json.JSONArray(t);
+            } catch (Throwable e) {
+                return new org.json.JSONArray();
+            }
+        }
+
+        private void writeIndex(org.json.JSONArray arr) {
+            try {
+                File f = indexFile();
+                if (f.getParentFile() != null) f.getParentFile().mkdirs();
+                FileOutputStream fo = new FileOutputStream(f);
+                fo.write(arr.toString().getBytes("UTF-8"));
+                fo.close();
+            } catch (Throwable e) {
+                log("SAVE", "写索引失败 " + e);
+            }
+        }
+
+        private String sha1id(byte[] data) {
+            try {
+                MessageDigest md = MessageDigest.getInstance("SHA-1");
+                byte[] d = md.digest(data);
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < 6; i++) sb.append(String.format("%02x", d[i]));
+                return sb.toString();
+            } catch (Throwable e) {
+                return String.valueOf(System.currentTimeMillis());
+            }
+        }
+
+        private String datasetFileName(String id) {
+            return "fraud_detection_data_" + id + ".db";
+        }
+
+        private byte[] readDataset(String id) throws Exception {
+            Uri tree = storeTree();
+            if (tree == null) {
+                File f = new File(new File(getFilesDir(), "imported"), datasetFileName(id));
+                return f.exists() ? readFile(f) : null;
+            }
+            Uri doc = findInTree(tree, datasetFileName(id));
+            if (doc == null) return null;
+            InputStream in = getContentResolver().openInputStream(doc);
+            byte[] d = drain(in);
+            in.close();
+            return d;
+        }
+
+        private void writeDataset(String id, byte[] data) throws Exception {
+            Uri tree = storeTree();
+            if (tree == null) {
+                File dir = new File(getFilesDir(), "imported");
+                dir.mkdirs();
+                FileOutputStream fo = new FileOutputStream(new File(dir, datasetFileName(id)));
+                fo.write(data);
+                fo.close();
+                return;
+            }
+            String fn = datasetFileName(id);
+            Uri doc = findInTree(tree, fn);
+            if (doc == null) {
+                doc = DocumentsContract.createDocument(getContentResolver(), tree,
+                        "application/octet-stream", fn);
+            }
+            OutputStream os = getContentResolver().openOutputStream(doc, "wt");
+            os.write(data);
+            os.close();
+        }
+
+        @JavascriptInterface
+        public String savedList() {
+            org.json.JSONArray idx = readIndex();
+            StringBuilder sb = new StringBuilder("{\"enabled\":" + persistEnabled()
+                    + ",\"label\":" + q(storeLabel())
+                    + ",\"custom\":" + (storeTree() != null) + ",\"items\":[");
+            for (int i = 0; i < idx.length(); i++) {
+                org.json.JSONObject o = idx.optJSONObject(i);
+                if (o == null) continue;
+                if (i > 0) sb.append(',');
+                sb.append("{\"id\":").append(q(o.optString("id")))
+                        .append(",\"name\":").append(q(o.optString("name")))
+                        .append(",\"src\":").append(q(o.optString("src")))
+                        .append(",\"size\":").append(o.optLong("size"))
+                        .append(",\"savedAt\":").append(o.optLong("savedAt"))
+                        .append('}');
+            }
+            return sb.append("]}").toString();
+        }
+
+        @JavascriptInterface
+        public String savedLoad(String id) {
+            try {
+                byte[] data = readDataset(id);
+                if (data == null || data.length < 16) return "{\"ok\":false,\"error\":\"missing\"}";
+                return "{\"ok\":true,\"id\":" + q(id)
+                        + ",\"b64\":" + q(Base64.encodeToString(data, Base64.NO_WRAP)) + "}";
+            } catch (Throwable e) {
+                return "{\"ok\":false,\"error\":" + q(String.valueOf(e)) + "}";
+            }
+        }
+
+        @JavascriptInterface
+        public String savedMerge(String name, String src, String b64) {
+            if (!persistEnabled()) return "{\"ok\":false,\"error\":\"disabled\"}";
+            try {
+                byte[] data = Base64.decode(b64, Base64.DEFAULT);
+                String id = sha1id(data);
+                org.json.JSONArray idx = readIndex();
+                boolean exists = false;
+                for (int i = 0; i < idx.length(); i++) {
+                    org.json.JSONObject o = idx.optJSONObject(i);
+                    if (o != null && id.equals(o.optString("id"))) {
+                        o.put("savedAt", System.currentTimeMillis());
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    writeDataset(id, data);
+                    org.json.JSONObject o = new org.json.JSONObject();
+                    o.put("id", id);
+                    o.put("name", name == null ? "" : name);
+                    o.put("src", src == null ? "" : src);
+                    o.put("size", data.length);
+                    o.put("savedAt", System.currentTimeMillis());
+                    idx.put(o);
+                }
+                writeIndex(idx);
+                log("SAVE", (exists ? "已存在，更新时间戳 " : "新增数据集 ") + id + "，共 " + idx.length() + " 份");
+                return "{\"ok\":true,\"id\":" + q(id) + ",\"merged\":" + exists
+                        + ",\"count\":" + idx.length() + "}";
+            } catch (Throwable e) {
+                log("SAVE", "合并失败 " + e);
+                return "{\"ok\":false,\"error\":" + q(String.valueOf(e)) + "}";
+            }
+        }
+
+        @JavascriptInterface
+        public String savedDelete(String id) {
+            try {
+                Uri tree = storeTree();
+                if (tree == null) {
+                    new File(new File(getFilesDir(), "imported"), datasetFileName(id)).delete();
+                } else {
+                    Uri doc = findInTree(tree, datasetFileName(id));
+                    if (doc != null) DocumentsContract.deleteDocument(getContentResolver(), doc);
+                }
+                org.json.JSONArray idx = readIndex(), out = new org.json.JSONArray();
+                for (int i = 0; i < idx.length(); i++) {
+                    org.json.JSONObject o = idx.optJSONObject(i);
+                    if (o == null || id.equals(o.optString("id"))) continue;
+                    out.put(o);
+                }
+                writeIndex(out);
+                log("SAVE", "删除数据集 " + id + "，剩余 " + out.length());
+                return "{\"ok\":true,\"count\":" + out.length() + "}";
+            } catch (Throwable e) {
+                return "{\"ok\":false,\"error\":" + q(String.valueOf(e)) + "}";
+            }
+        }
+
+        @JavascriptInterface
+        public String savedClear() {
+            org.json.JSONArray idx = readIndex();
+            for (int i = 0; i < idx.length(); i++) {
+                org.json.JSONObject o = idx.optJSONObject(i);
+                if (o != null) savedDelete(o.optString("id"));
+            }
+            writeIndex(new org.json.JSONArray());
+            log("SAVE", "已清空所有数据集");
+            return "{\"ok\":true,\"count\":0}";
+        }
+
         @JavascriptInterface
         public String loadPersisted() {
             if (!persistEnabled()) return "{\"ok\":false,\"error\":\"disabled\"}";

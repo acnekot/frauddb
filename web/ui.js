@@ -52,7 +52,8 @@
     version: '', update: null, checking: false, downloaded: '',
     perms: null, callIndex: {}, callIndexRaw: {}, callList: [],
     persist: { enabled: false }, lastB64: '',
-    reveal: false, contactIndex: {}, contactIndexRaw: {}, bookCount: 0
+    reveal: false, contactIndex: {}, contactIndexRaw: {}, bookCount: 0,
+    dbs: [], saved: [], savedInfo: {}
   };
 
   /* ---------- 工具 ---------- */
@@ -154,100 +155,118 @@
     return best && bd <= 120000 ? { file: best.file, pkg: best.pkg, delta: bd } : null;
   }
 
+  function datasets() {
+    if (s.dbs && s.dbs.length) return s.dbs;
+    if (s.db) return [{ id: 'cur', meta: { name: s.name, src: s.src }, db: s.db }];
+    return [];
+  }
+
   function buildEvents() {
-    var db = s.db, ev = [], rec = [], T = db.tables;
-    function push(kind, t, obj) {
-      if (typeof t !== 'number' || !isFinite(t) || t < 1e11) return;
-      obj.kind = kind; obj.t = t; ev.push(obj);
-    }
-    if (T.screenshot) T.screenshot.rows.forEach(function (r) {
-      push('shot', cell(T.screenshot, r, 'screenshot_time'), { table: 'screenshot', rowid: r.rowid, data: {} });
-    });
-    if (T.screen_share) T.screen_share.rows.forEach(function (r) {
-      var t = T.screen_share;
-      push('screen', cell(t, r, 'screen_share_start_time'), {
-        table: 'screen_share', rowid: r.rowid,
-        data: {
-          pkg: cell(t, r, 'screen_share_package_name'),
-          start: cell(t, r, 'screen_share_start_time'),
-          end: cell(t, r, 'screen_share_end_time'),
-          dur: cell(t, r, 'duration'), active: cell(t, r, 'is_active')
-        }
+    var ev = [], rec = [], seen = {};
+    datasets().forEach(function (ds) {
+      var T = ds.db.tables;
+
+      function push(kind, t, obj) {
+        if (typeof t !== 'number' || !isFinite(t) || t < 1e11) return;
+        var key = kind + '|' + (obj.rowid || 0) + '|' + t;
+        if (seen[key]) return;
+        seen[key] = 1;
+        obj.kind = kind; obj.t = t; obj.ds = ds.id;
+        ev.push(obj);
+      }
+
+      if (T.screenshot) T.screenshot.rows.forEach(function (r) {
+        push('shot', cell(T.screenshot, r, 'screenshot_time'), { table: 'screenshot', rowid: r.rowid, data: {} });
+      });
+      if (T.screen_share) T.screen_share.rows.forEach(function (r) {
+        var t = T.screen_share;
+        push('screen', cell(t, r, 'screen_share_start_time'), {
+          table: 'screen_share', rowid: r.rowid,
+          data: {
+            pkg: cell(t, r, 'screen_share_package_name'),
+            start: cell(t, r, 'screen_share_start_time'),
+            end: cell(t, r, 'screen_share_end_time'),
+            dur: cell(t, r, 'duration'), active: cell(t, r, 'is_active')
+          }
+        });
+      });
+      if (T.fraud_phone) T.fraud_phone.rows.forEach(function (r) {
+        var t = T.fraud_phone;
+        push('call', cell(t, r, 'call_start_time'), {
+          table: 'fraud_phone', rowid: r.rowid,
+          data: {
+            start: cell(t, r, 'call_start_time'), end: cell(t, r, 'call_end_time'),
+            loc: cell(t, r, 'tel_location'), op: cell(t, r, 'operator'),
+            md5: cell(t, r, 'tel_number_md5'), dur: cell(t, r, 'duration'),
+            cn: cell(t, r, 'is_chinese_number'), virt: cell(t, r, 'is_virtual_operator'),
+            fraud: cell(t, r, 'is_fraud_call')
+          }
+        });
+      });
+      if (T.airplane_mode) T.airplane_mode.rows.forEach(function (r) {
+        var t = T.airplane_mode;
+        push('air', cell(t, r, 'airplane_mode_change_time'), {
+          table: 'airplane_mode', rowid: r.rowid, data: { on: cell(t, r, 'airplane_mode_on') }
+        });
+      });
+      if (T.install_app) T.install_app.rows.forEach(function (r) {
+        var t = T.install_app;
+        push('install', cell(t, r, 'install_finish_time'), {
+          table: 'install_app', rowid: r.rowid,
+          data: {
+            pkg: cell(t, r, 'pkg_name'), name: cell(t, r, 'app_name'),
+            src: cell(t, r, 'source'), ver: cell(t, r, 'version_code'),
+            md5: cell(t, r, 'md5'), tag: cell(t, r, 'app_tag_id'), sec: cell(t, r, 'security_tag_id')
+          }
+        });
+      });
+      if (T.fraud_url) T.fraud_url.rows.forEach(function (r) {
+        var t = T.fraud_url;
+        push('url', cell(t, r, 'access_time'), { table: 'fraud_url', rowid: r.rowid, data: { type: cell(t, r, 'url_type') } });
+      });
+      if (T.voip_record) T.voip_record.rows.forEach(function (r) {
+        var t = T.voip_record;
+        push('voip', cell(t, r, 'voip_record_start_time'), {
+          table: 'voip_record', rowid: r.rowid,
+          data: {
+            pkg: cell(t, r, 'voip_record_package_name'),
+            start: cell(t, r, 'voip_record_start_time'), end: cell(t, r, 'voip_record_end_time'),
+            dur: cell(t, r, 'duration'), fraud: cell(t, r, 'is_fraud_call')
+          }
+        });
+      });
+      if (T.call_forwarding) T.call_forwarding.rows.forEach(function (r) {
+        var t = T.call_forwarding;
+        push('forward', cell(t, r, 'timestamp'), {
+          table: 'call_forwarding', rowid: r.rowid,
+          data: { reason: cell(t, r, 'reason'), enabled: cell(t, r, 'enabled') }
+        });
+      });
+
+      (ds.db.recovered || []).forEach(function (r) {
+        var kind = TABLE_KIND[r.table];
+        if (!kind) return;
+        var t = ds.db.tables[r.table], fake = { rowid: r.rowid, values: r.values };
+        var pick = function (n) { return t ? cell(t, fake, n) : null; };
+        var ms = 0, o = { table: r.table, rowid: r.rowid, gone: true, from: r.from, data: {}, kind: kind, ds: ds.id };
+        if (kind === 'shot') ms = pick('screenshot_time');
+        else if (kind === 'screen') { ms = pick('screen_share_start_time'); o.data = { pkg: pick('screen_share_package_name'), start: ms, end: pick('screen_share_end_time'), dur: pick('duration') }; }
+        else if (kind === 'call') { ms = pick('call_start_time'); o.data = { loc: pick('tel_location'), op: pick('operator'), md5: pick('tel_number_md5'), dur: pick('duration'), virt: pick('is_virtual_operator'), fraud: pick('is_fraud_call'), start: ms, end: pick('call_end_time') }; }
+        else if (kind === 'air') { ms = pick('airplane_mode_change_time'); o.data = { on: pick('airplane_mode_on') }; }
+        else if (kind === 'install') { ms = pick('install_finish_time'); o.data = { pkg: pick('pkg_name'), name: pick('app_name'), src: pick('source'), ver: pick('version_code') }; }
+        else if (kind === 'url') { ms = pick('access_time'); o.data = { type: pick('url_type') }; }
+        else if (kind === 'voip') { ms = pick('voip_record_start_time'); o.data = { pkg: pick('voip_record_package_name'), dur: pick('duration') }; }
+        else if (kind === 'forward') { ms = pick('timestamp'); o.data = { reason: pick('reason'), enabled: pick('enabled') }; }
+        if (typeof ms !== 'number' || ms < 1e11) return;
+        var key2 = kind + '|' + (o.rowid || 0) + '|' + ms + '|r';
+        if (seen[key2]) return;
+        seen[key2] = 1;
+        o.t = ms; rec.push(o);
       });
     });
-    if (T.fraud_phone) T.fraud_phone.rows.forEach(function (r) {
-      var t = T.fraud_phone;
-      push('call', cell(t, r, 'call_start_time'), {
-        table: 'fraud_phone', rowid: r.rowid,
-        data: {
-          start: cell(t, r, 'call_start_time'), end: cell(t, r, 'call_end_time'),
-          loc: cell(t, r, 'tel_location'), op: cell(t, r, 'operator'),
-          md5: cell(t, r, 'tel_number_md5'), dur: cell(t, r, 'duration'),
-          cn: cell(t, r, 'is_chinese_number'), virt: cell(t, r, 'is_virtual_operator'),
-          fraud: cell(t, r, 'is_fraud_call')
-        }
-      });
-    });
-    if (T.airplane_mode) T.airplane_mode.rows.forEach(function (r) {
-      var t = T.airplane_mode;
-      push('air', cell(t, r, 'airplane_mode_change_time'), {
-        table: 'airplane_mode', rowid: r.rowid, data: { on: cell(t, r, 'airplane_mode_on') }
-      });
-    });
-    if (T.install_app) T.install_app.rows.forEach(function (r) {
-      var t = T.install_app;
-      push('install', cell(t, r, 'install_finish_time'), {
-        table: 'install_app', rowid: r.rowid,
-        data: {
-          pkg: cell(t, r, 'pkg_name'), name: cell(t, r, 'app_name'),
-          src: cell(t, r, 'source'), ver: cell(t, r, 'version_code'),
-          md5: cell(t, r, 'md5'), tag: cell(t, r, 'app_tag_id'), sec: cell(t, r, 'security_tag_id')
-        }
-      });
-    });
-    if (T.fraud_url) T.fraud_url.rows.forEach(function (r) {
-      var t = T.fraud_url;
-      push('url', cell(t, r, 'access_time'), { table: 'fraud_url', rowid: r.rowid, data: { type: cell(t, r, 'url_type') } });
-    });
-    if (T.voip_record) T.voip_record.rows.forEach(function (r) {
-      var t = T.voip_record;
-      push('voip', cell(t, r, 'voip_record_start_time'), {
-        table: 'voip_record', rowid: r.rowid,
-        data: {
-          pkg: cell(t, r, 'voip_record_package_name'),
-          start: cell(t, r, 'voip_record_start_time'), end: cell(t, r, 'voip_record_end_time'),
-          dur: cell(t, r, 'duration'), fraud: cell(t, r, 'is_fraud_call')
-        }
-      });
-    });
-    if (T.call_forwarding) T.call_forwarding.rows.forEach(function (r) {
-      var t = T.call_forwarding;
-      push('forward', cell(t, r, 'timestamp'), {
-        table: 'call_forwarding', rowid: r.rowid,
-        data: { reason: cell(t, r, 'reason'), enabled: cell(t, r, 'enabled') }
-      });
-    });
+
     ev.sort(function (a, b) { return b.t - a.t; });
-
-    (db.recovered || []).forEach(function (r) {
-      var kind = TABLE_KIND[r.table];
-      if (!kind) return;
-      var t = db.tables[r.table], fake = { rowid: r.rowid, values: r.values };
-      var pick = function (n) { return t ? cell(t, fake, n) : null; };
-      var ms = 0, o = { table: r.table, rowid: r.rowid, gone: true, from: r.from, data: {}, kind: kind };
-      if (kind === 'shot') ms = pick('screenshot_time');
-      else if (kind === 'screen') { ms = pick('screen_share_start_time'); o.data = { pkg: pick('screen_share_package_name'), start: ms, end: pick('screen_share_end_time'), dur: pick('duration') }; }
-      else if (kind === 'call') { ms = pick('call_start_time'); o.data = { loc: pick('tel_location'), op: pick('operator'), md5: pick('tel_number_md5'), dur: pick('duration'), virt: pick('is_virtual_operator'), fraud: pick('is_fraud_call'), start: ms, end: pick('call_end_time') }; }
-      else if (kind === 'air') { ms = pick('airplane_mode_change_time'); o.data = { on: pick('airplane_mode_on') }; }
-      else if (kind === 'install') { ms = pick('install_finish_time'); o.data = { pkg: pick('pkg_name'), name: pick('app_name'), src: pick('source'), ver: pick('version_code') }; }
-      else if (kind === 'url') { ms = pick('access_time'); o.data = { type: pick('url_type') }; }
-      else if (kind === 'voip') { ms = pick('voip_record_start_time'); o.data = { pkg: pick('voip_record_package_name'), dur: pick('duration') }; }
-      else if (kind === 'forward') { ms = pick('timestamp'); o.data = { reason: pick('reason'), enabled: pick('enabled') }; }
-      if (typeof ms !== 'number' || ms < 1e11) return;
-      o.t = ms; rec.push(o);
-    });
     rec.sort(function (a, b) { return b.t - a.t; });
-
     s.events = ev;
     s.recovered = rec;
   }
@@ -454,7 +473,13 @@
 
   function renderStats() {
     var db = s.db, st = db.stats || {};
-    var rows = Object.keys(db.tables).map(function (n) { return { n: n, c: db.tables[n].rows.length }; })
+    var agg = {};
+    datasets().forEach(function (ds) {
+      Object.keys(ds.db.tables).forEach(function (n) {
+        agg[n] = (agg[n] || 0) + ds.db.tables[n].rows.length;
+      });
+    });
+    var rows = Object.keys(agg).map(function (n) { return { n: n, c: agg[n] }; })
       .sort(function (a, b) { return b.c - a.c; });
     var max = 1, total = 0;
     rows.forEach(function (r) { if (r.c > max) max = r.c; total += r.c; });
@@ -490,6 +515,7 @@
         '<div class="k">文件</div><div class="v">' + esc(s.name || '—') + '</div>' +
         '<div class="k">来源</div><div class="v">' + esc(s.src === 'root' ? '系统路径（root 读取）' : s.src === 'pick' ? '手动选择'
         : s.src === 'stored' ? '上次保存的副本' : '未知') + '</div>' +
+        '<div class="k">数据集</div><div class="v">' + datasets().length + ' 份（时间线为合并结果）</div>' +
         '<div class="k">体积</div><div class="v">' + sizeText(st.fileSize || 0) + '，' + (st.pageSize || 0) + ' B/页 × ' + (st.pageCount || 0) + ' 页</div>' +
         '<div class="k">编码</div><div class="v">' + esc(st.encoding || '—') + '</div>' +
         '<div class="k">全部行数</div><div class="v">' + total + ' 条</div>' +
@@ -923,6 +949,29 @@
     try { return JSON.parse(Android.persistInfo() || '{}'); } catch (e) { return { enabled: false }; }
   }
 
+  function loadAllSaved() {
+    s.saved = []; s.dbs = [];
+    if (!window.Android || !Android.savedList) { buildEvents(); return; }
+    var list = {};
+    try { list = JSON.parse(Android.savedList() || '{}'); } catch (e) { list = {}; }
+    if (!list.enabled) { buildEvents(); return; }
+    s.savedInfo = list;
+    s.saved = list.items || [];
+    s.saved.sort(function (a, b) { return (b.savedAt || 0) - (a.savedAt || 0); });
+    s.saved.forEach(function (it) {
+      try {
+        var r = JSON.parse(Android.savedLoad(it.id) || '{}');
+        if (r.ok && r.b64) {
+          s.dbs.push({ id: it.id, meta: it, db: SQLiteLite.open(b64ToBytes(r.b64)) });
+        }
+      } catch (e) {
+        logToNative('SAVE', '数据集解析失败 ' + it.id + ' → ' + e);
+      }
+    });
+    if (s.dbs.length) s.db = s.dbs[0].db;
+    buildEvents();
+  }
+
   function persistPanel() {
     var p = s.persist || {};
     var on = !!p.enabled;
@@ -949,8 +998,26 @@
       html += item('storePick', 'folder', '选择保存目录',
         p.custom ? '当前为自定义目录' : '默认存在应用私有目录，可改成任意目录');
       if (p.custom) html += item('storeReset', 'refresh', '恢复默认位置', '改回应用私有目录');
-      html += item('persistSave', 'download', '立即保存当前数据库', '把当前解析的库写入上面的位置');
-      html += item('persistClear', 'chevron', '清除已保存的副本', '删除本地副本，时间线仍在内存中');
+      html += item('persistSave', 'download', '把当前数据库并入已保存数据集', '相同内容只更新时间戳，不重复存');
+      var saved = s.saved || [];
+      if (saved.length) {
+        html += '<div class="kv" style="padding:10px 16px 0"><div class="k">已保存</div><div class="v">' +
+          saved.length + ' 份数据集，时间线为合并结果</div></div>';
+        saved.slice(0, 8).forEach(function (it) {
+          html += '<button class="item" data-act="dsdel" data-id="' + esc(it.id) + '">' +
+            ic('chevron') +
+            '<span class="lbl">' + esc(it.name || it.id) +
+              '<small>' + sizeText(it.size || 0) +
+              (it.savedAt ? ' · ' + dayKey(it.savedAt) + ' ' + hms(it.savedAt) : '') +
+              ' · 点此删除</small>' +
+            '</span>' + ic('chevron') + '</button>';
+        });
+        if (saved.length > 8) {
+          html += '<div class="kv" style="padding:0 16px"><div class="k"></div><div class="v">还有 ' +
+            (saved.length - 8) + ' 份未列出</div></div>';
+        }
+        html += item('dsclear', 'chevron', '清空全部数据集', '删除所有已保存的副本');
+      }
     }
     html += '</div>';
     return html;
@@ -968,14 +1035,16 @@
     s.src = src || '';
     s.filter = 'all'; s.shown = 240; s.tableShown = 80; s.table = null;
     s.lastB64 = b64 || '';
-    if (b64 && s.persist && s.persist.enabled && window.Android && Android.persistCurrent) {
+    if (b64 && s.persist && s.persist.enabled && window.Android && Android.savedMerge) {
       try {
-        var pr = JSON.parse(Android.persistCurrent(name, src, b64) || '{}');
-        if (pr.ok) logToNative('SAVE', '已写入副本 ' + pr.path);
+        var mr = JSON.parse(Android.savedMerge(name, src, b64) || '{}');
+        if (mr.ok) logToNative('SAVE', '合并数据集 ' + mr.id + '，现在共 ' + mr.count + ' 份');
       } catch (e) { }
       s.persist = persistInfo();
+      loadAllSaved();
+    } else {
+      buildEvents();
     }
-    buildEvents();
     setView('timeline');
     render();
     toast('已解析 ' + s.events.length + ' 条现存记录' + (s.recovered.length ? '，可恢复 ' + s.recovered.length + ' 条' : ''));
@@ -1072,19 +1141,28 @@
       });
       name = 'frauddb-timeline.txt'; content = lines.join('\n');
     } else if (kind === 'json') {
-      var out = { file: s.name, path: s.path, exportedAt: new Date().toISOString(), stats: s.db.stats, tables: {}, recovered: [] };
-      Object.keys(s.db.tables).forEach(function (n) {
-        var t = s.db.tables[n];
-        out.tables[n] = t.rows.map(function (r) {
-          var o = { rowid: r.rowid };
-          t.columns.forEach(function (c, i) { if (c !== '_id') o[c] = flat(r.values[i]); });
-          return o;
+      var out = { exportedAt: new Date().toISOString(), datasets: [], recovered: [] };
+      datasets().forEach(function (ds) {
+        var d = {
+          id: ds.id,
+          name: (ds.meta && ds.meta.name) || ds.id,
+          stats: ds.db.stats,
+          tables: {}
+        };
+        Object.keys(ds.db.tables).forEach(function (n) {
+          var t = ds.db.tables[n];
+          d.tables[n] = t.rows.map(function (r) {
+            var o = { rowid: r.rowid };
+            t.columns.forEach(function (c, i) { if (c !== '_id') o[c] = flat(r.values[i]); });
+            return o;
+          });
         });
-      });
-      (s.db.recovered || []).forEach(function (r) {
-        var t = s.db.tables[r.table], o = { table: r.table, rowid: r.rowid, from: r.from };
-        if (t) t.columns.forEach(function (c, i) { if (c !== '_id') o[c] = flat(r.values[i]); });
-        out.recovered.push(o);
+        out.datasets.push(d);
+        (ds.db.recovered || []).forEach(function (r) {
+          var t = ds.db.tables[r.table], o = { dataset: ds.id, table: r.table, rowid: r.rowid, from: r.from };
+          if (t) t.columns.forEach(function (c, i) { if (c !== '_id') o[c] = flat(r.values[i]); });
+          out.recovered.push(o);
+        });
       });
       name = 'frauddb.json'; content = JSON.stringify(out, null, 2);
     } else {
@@ -1156,6 +1234,21 @@
         render();
       }
       else if (act === 'revealReload') { loadCallLog(); loadContacts(); render(); }
+      else if (act === 'dsdel') {
+        var did = t.getAttribute('data-id');
+        try { Android.savedDelete(did); } catch (e) { }
+        toast('已删除该数据集');
+        s.persist = persistInfo();
+        loadAllSaved();
+        render();
+      }
+      else if (act === 'dsclear') {
+        try { Android.savedClear(); } catch (e) { }
+        toast('已清空全部数据集');
+        s.persist = persistInfo();
+        loadAllSaved();
+        render();
+      }
       else if (act === 'storePick') {
         if (window.Android && Android.pickStoreDir) Android.pickStoreDir();
         else toast('需要在 App 内运行');
@@ -1185,8 +1278,9 @@
       else if (act === 'persistSave') {
         if (!s.lastB64) { toast('当前没有已解析的数据库'); return; }
         try {
-          var r2 = JSON.parse(Android.persistCurrent(s.name, s.src, s.lastB64) || '{}');
-          toast(r2.ok ? '已保存到 ' + r2.path : '保存失败：' + (r2.error || ''));
+          var r2 = JSON.parse(Android.savedMerge(s.name, s.src, s.lastB64) || '{}');
+          toast(r2.ok ? (r2.merged ? '已存在，更新时间戳' : '已并入数据集，共 ' + r2.count + ' 份') : '保存失败：' + (r2.error || ''));
+          loadAllSaved();
         } catch (e) { toast('保存失败'); }
         s.persist = persistInfo();
         render();
@@ -1282,12 +1376,14 @@
       setTimeout(function () { loadCallLog(); loadContacts(); }, 300);
     }
 
-    if (window.Android && Android.loadPersisted && s.persist && s.persist.enabled) {
+    if (window.Android && Android.savedList && s.persist && s.persist.enabled) {
       setTimeout(function () {
-        var r = {};
-        try { r = JSON.parse(Android.loadPersisted() || '{}'); } catch (e) { r = {}; }
-        if (r && r.ok && r.b64) {
-          applyBytes(b64ToBytes(r.b64), r.name, '', 'stored', r.b64);
+        loadAllSaved();
+        if (s.dbs.length) {
+          s.name = (s.saved[0] && s.saved[0].name) || s.name;
+          s.src = 'stored';
+          render();
+          toast('已载入 ' + s.dbs.length + ' 份数据集，时间线为合并结果');
           setTimeout(loadScreens, 60);
         } else if (window.Android && Android.autoLoad) {
           autoLoad();
