@@ -52,6 +52,7 @@ call_forwarding(_id, reason, enabled, timestamp)
 
 `tel_number_md5` 的算法已经逆出来了，见 [docs/md5-algorithm.md](docs/md5-algorithm.md)：
 号码原样取 UTF-8 字节做 MD5，小写十六进制，无盐、无归一化。
+因为是裸 MD5，`tools/md5phone.py` 可以按号段枚举号码反查哈希（仅用于验证自己的数据）。
 
 ## 使用
 

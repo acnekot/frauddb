@@ -50,7 +50,7 @@
     view: 'timeline', filter: 'all', table: null,
     shown: 240, showDeleted: true, tableShown: 80,
     version: '', update: null, checking: false, downloaded: '',
-    perms: null, callIndex: {}, callList: []
+    perms: null, callIndex: {}, callIndexRaw: {}, callList: []
   };
 
   /* ---------- 工具 ---------- */
@@ -664,10 +664,14 @@
     try { r = JSON.parse(Android.calllog() || '{}'); } catch (e) { r = { ok: false, error: String(e) }; }
     if (!r.ok) { toast('通话记录读取失败：' + (r.error || '未知')); return; }
     var arr = (r.items || []).slice().sort(function (a, b) { return a.date - b.date; });
-    var idx = {};
-    arr.forEach(function (it) { if (it.md5) idx[String(it.md5).toLowerCase()] = it; });
+    var idx = {}, idxRaw = {};
+    arr.forEach(function (it) {
+      if (it.md5) idx[String(it.md5).toLowerCase()] = it;
+      if (it.md5Raw) idxRaw[String(it.md5Raw).toLowerCase()] = it;
+    });
     s.callList = arr;
     s.callIndex = idx;
+    s.callIndexRaw = idxRaw;
     if (arr.length) toast('读到 ' + arr.length + ' 条通话记录');
     if (s.view === 'timeline') render();
   }
@@ -675,7 +679,9 @@
   function pairCall(d0) {
     if (!d0) return null;
     var k = String(d0.md5 || '').toLowerCase();
-    if (k && s.callIndex && s.callIndex[k]) return { it: s.callIndex[k], how: 'md5' };
+    // 库里的算法是 md5(号码原样)，所以先按原样比，再退回去掉分隔符的重算值
+    if (k && s.callIndexRaw && s.callIndexRaw[k]) return { it: s.callIndexRaw[k], how: 'md5' };
+    if (k && s.callIndex && s.callIndex[k]) return { it: s.callIndex[k], how: 'md5-norm' };
     if (s.callList && s.callList.length && d0.start) {
       var wrapped = s.callList.map(function (it) { return { ms: it.date, it: it }; });
       var near = nearest(wrapped, d0.start, 90000);

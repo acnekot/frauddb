@@ -564,6 +564,7 @@ public class MainActivity extends Activity {
                                 .append(",\"geo\":").append(q(geo))
                                 .append(",\"md5\":").append(q(md5hex(num == null ? "" : num
                                         .replace(" ", "").replace("-", ""))))
+                                .append(",\"md5Raw\":").append(q(md5hex(num == null ? "" : num)))
                                 .append('}');
                         n++;
                     }
