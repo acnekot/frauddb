@@ -556,6 +556,7 @@
       '</div>' +
       '<div class="panel"><h2>诊断</h2>' +
         item('selftest', 'scan', '跑一次 root 自检', '依次执行 id / getenforce / su -v / su -c id') +
+        item('md5probe', 'link', '探测号码 MD5 算法', '用通话记录反推库里 md5 的归一化方式') +
         item('layout', 'scan', '布局诊断', '找出把页面撑宽的元素并写进日志') +
         item('logs', 'info', '诊断日志', 'su 调用、返回码、SELinux、路径探测') +
         item('logcopy', 'download', '复制全部日志', '直接贴出来就能看') +
@@ -714,6 +715,74 @@
         (bad.length ? ' 超宽元素: ' + bad.join(' | ') : ' 没有超宽元素'));
     }
     return { vw: vw, sw: sw, bad: bad };
+  }
+
+  /** 试几种常见的号码归一化，看哪一种能对上库里的 tel_number_md5 */
+  function md5Variants(num) {
+    var raw = String(num || '');
+    var digits = raw.replace(/\D/g, '');
+    var no86 = digits.replace(/^86/, '').replace(/^0/, '');
+    return {
+      '原样': raw,
+      '去分隔符': digits,
+      '去分隔符+86': '+86' + no86,
+      '86前缀': '86' + no86,
+      '去首0': digits.replace(/^0/, '')
+    };
+  }
+
+  function md5Probe() {
+    if (!window.Android || !Android.md5) { toast('需要在 App 内运行'); return; }
+    var libs = [];
+    s.events.concat(s.recovered).forEach(function (e) {
+      if (e.kind !== 'call' || !e.data || !e.data.md5) return;
+      libs.push({ md5: String(e.data.md5).toLowerCase(), t: e.t, loc: e.data.loc || '', op: e.data.op || '' });
+    });
+    if (!libs.length) { toast('库里没有通话记录，无从比对'); return; }
+
+    var calls = (s.callList && s.callList.length) ? s.callList : [];
+    if (!calls.length) {
+      try {
+        var r = JSON.parse(Android.calllog() || '{}');
+        if (r.ok) calls = r.items || [];
+      } catch (e) { }
+    }
+    if (!calls.length) { toast('需要先授予通话记录权限'); return; }
+
+    var names = ['原样', '去分隔符', '去分隔符+86', '86前缀', '去首0'];
+    var hits = {}, samples = {};
+    names.forEach(function (n) { hits[n] = 0; samples[n] = []; });
+
+    calls.forEach(function (c) {
+      var vs = md5Variants(c.number);
+      names.forEach(function (n) {
+        var h = Android.md5(vs[n]);
+        for (var i = 0; i < libs.length; i++) {
+          if (libs[i].md5 === h) {
+            hits[n]++;
+            if (samples[n].length < 3) {
+              samples[n].push(vs[n] + ' → ' + libs[i].md5.slice(0, 8) + '… (' + libs[i].loc + ' ' + libs[i].op + ')');
+            }
+            break;
+          }
+        }
+      });
+    });
+
+    var best = '', bestN = 0;
+    names.forEach(function (n) { if (hits[n] > bestN) { bestN = hits[n]; best = n; } });
+
+    var line = names.map(function (n) { return n + '=' + hits[n]; }).join('  ');
+    logToNative('MD5', '命中统计 ' + line);
+    samples[best].forEach(function (x) { logToNative('MD5', '样例[' + best + '] ' + x); });
+
+    if (bestN > 0) {
+      toast('最可能是「' + best + '」形式（' + bestN + ' 次命中）');
+      logToNative('MD5', '结论：算法大概率是 md5(' + best + ')');
+    } else {
+      toast('五种常见形式都没对上，可能带盐');
+      logToNative('MD5', '结论：五种常见形式全部未命中，疑似带盐或另有归一化');
+    }
   }
 
   function layoutCheck() {
@@ -948,6 +1017,7 @@
       else if (act === 'permmedia') requestPerm('media');
       else if (act === 'permcall') requestPerm('calllog');
       else if (act === 'loadcalls') loadCallLog();
+      else if (act === 'md5probe') md5Probe();
       else if (act === 'layout') layoutCheck();
       else if (act === 'selftest') runSelfTest();
       else if (act === 'logs') { setView('logs'); render(); }

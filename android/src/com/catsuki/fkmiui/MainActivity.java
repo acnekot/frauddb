@@ -598,6 +598,11 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String md5(String s) {
+            return md5hex(s == null ? "" : s);
+        }
+
+        @JavascriptInterface
         public void webLog(String tag, String msg) {
             log(tag == null || tag.isEmpty() ? "WEB" : tag, msg == null ? "" : msg);
         }
