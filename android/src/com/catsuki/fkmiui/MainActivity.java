@@ -78,7 +78,15 @@ public class MainActivity extends Activity {
         ws.setAllowFileAccess(true);
         ws.setAllowContentAccess(true);
         try { ws.setAllowFileAccessFromFileURLs(true); } catch (Throwable ignored) { }
+        // 关键：新版 Chromium 会忽略 meta 里的 user-scalable=no，
+        // 必须在 WebView 层面把缩放彻底关掉，否则页面会被 pinch zoom 后横向平移
+        ws.setUseWideViewPort(true);
+        ws.setLoadWithOverviewMode(false);
+        ws.setSupportZoom(false);
+        ws.setBuiltInZoomControls(false);
+        ws.setDisplayZoomControls(false);
         ws.setTextZoom(100);
+        ws.setDefaultFontSize(15);
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView v, String url) { return true; }
