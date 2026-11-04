@@ -1,4 +1,4 @@
-# 反诈库直查 · fkmiui
+# 反诈库直查 · frauddb
 
 读取小米 HyperOS 反诈组件留下的本地数据库 `fraud_detection_data.db`，把里面的记录整理成时间线。
 
@@ -58,7 +58,7 @@ call_forwarding(_id, reason, enabled, timestamp)
 
 **安装 APK**
 
-从 [Releases](https://github.com/acnekot/frauddb/releases) 下载最新的 `fkmiui-*.apk` 安装，包名 `com.catsuki.frauddb`。
+从 [Releases](https://github.com/acnekot/frauddb/releases) 下载最新的 `frauddb-<版本>.apk` 安装，包名 `com.catsuki.frauddb`。
 
 旧版本不再单独提供下载，历史版本留在 tag 里。包名从 `fkmiui` 改成了 `frauddb`，
 属于另一个应用，装新版前请先卸载旧版（旧版里保存的数据集不会迁移）。
@@ -147,7 +147,7 @@ web/
 android/
   AndroidManifest.xml
   build.sh             不使用 Gradle 的构建脚本
-  src/com/catsuki/fkmiui/
+  src/com/catsuki/frauddb/
     MainActivity.java  壳与 JS 桥
     MediaActivity.java 应用内看图 / 播放
     UpdateProvider.java 把下载的 APK 交给安装器
