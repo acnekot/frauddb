@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 数据行 -->
+    <path
+        android:fillColor="#DFE6FF"
+        android:pathData="M30,38h26a3.5,3.5 0 0 1 0,7H30a3.5,3.5 0 0 1 0,-7z" />
+    <path
+        android:fillColor="#C3CFF7"
+        android:pathData="M30,52h22a3.5,3.5 0 0 1 0,7H30a3.5,3.5 0 0 1 0,-7z" />
+    <path
+        android:fillColor="#A8B8EE"
+        android:pathData="M30,66h18a3.5,3.5 0 0 1 0,7H30a3.5,3.5 0 0 1 0,-7z" />
+
+    <!-- 放大镜 -->
+    <path
+        android:strokeColor="#F2F5FF"
+        android:strokeWidth="6"
+        android:fillColor="#00000000"
+        android:pathData="M57,58a14,14 0 1,0 28,0a14,14 0 1,0 -28,0z" />
+    <path
+        android:strokeColor="#F2F5FF"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M81,68L87,74" />
+</vector>

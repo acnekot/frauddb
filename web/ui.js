@@ -1,0 +1,667 @@
+/* 反诈库直查 —— 界面层（MD3） */
+(function () {
+  'use strict';
+
+  var $ = function (q) { return document.querySelector(q); };
+
+  var ICONS = {
+    photo: 'M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5z',
+    screen: 'M20 18a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z',
+    call: 'M20 15.4c-1.2 0-2.4-.2-3.5-.6-.4-.1-.8 0-1 .3l-1.6 2c-2.8-1.4-5.5-3.9-6.9-6.9l2-1.7c.3-.3.3-.7.2-1-.4-1.1-.6-2.3-.6-3.5 0-.6-.4-1-1-1H4.2C3.6 3 3 3.3 3 4c0 9.3 7.7 17 17 17 .7 0 1-.6 1-1.2v-3.4c0-.6-.5-1-1-1z',
+    flight: 'M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z',
+    install: 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z',
+    link: 'M3.9 12c0-1.7 1.4-3.1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7c-1.7 0-3.1-1.4-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.7 0 3.1 1.4 3.1 3.1s-1.4 3.1-3.1 3.1h-4V17h4a5 5 0 0 0 0-10z',
+    headset: 'M12 1a9 9 0 0 0-9 9v7a3 3 0 0 0 3 3h3v-8H5v-2a7 7 0 0 1 14 0v2h-4v8h3a3 3 0 0 0 3-3v-7a9 9 0 0 0-9-9z',
+    forward: 'M12 8V4l8 8-8 8v-4H4V8z',
+    database: 'M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm6 16c0 .1-2.1 1-6 1s-6-.9-6-1v-2.2c1.3.6 3.5 1 6 1s4.7-.4 6-1V20zm0-5c0 .1-2.1 1-6 1s-6-.9-6-1v-2.2c1.3.6 3.5 1 6 1s4.7-.4 6-1V15zm0-5c0 .1-2.1 1-6 1s-6-.9-6-1V7.8c1.3.6 3.5 1 6 1s4.7-.4 6-1V10z',
+    folder: 'M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z',
+    check: 'M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z',
+    download: 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z',
+    chevron: 'M10 6 8.6 7.4 13.2 12l-4.6 4.6L10 18l6-6z',
+    scan: 'M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z',
+    info: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z'
+  };
+
+  function ic(name) {
+    var p = ICONS[name] || ICONS.database;
+    return '<span class="ic"><svg viewBox="0 0 24 24"><path d="' + p + '"/></svg></span>';
+  }
+
+  var KINDS = {
+    shot: { label: '截图', icon: 'photo', tint: 'shot' },
+    screen: { label: '录屏', icon: 'screen', tint: 'screen' },
+    call: { label: '通话', icon: 'call', tint: 'call' },
+    air: { label: '飞行模式', icon: 'flight', tint: 'air' },
+    install: { label: '安装', icon: 'install', tint: 'install' },
+    url: { label: '涉诈链接', icon: 'link', tint: 'url' },
+    voip: { label: 'VoIP', icon: 'headset', tint: 'call' },
+    forward: { label: '呼叫转移', icon: 'forward', tint: 'air' }
+  };
+
+  var TABLE_KIND = {
+    screenshot: 'shot', screen_share: 'screen', fraud_phone: 'call',
+    airplane_mode: 'air', install_app: 'install', fraud_url: 'url',
+    voip_record: 'voip', call_forwarding: 'forward'
+  };
+
+  var s = {
+    db: null, name: '', path: '', src: '',
+    events: [], recovered: [], screens: [], showPair: false,
+    view: 'timeline', filter: 'all', table: null,
+    shown: 240, showDeleted: true, tableShown: 80
+  };
+
+  /* ---------- 工具 ---------- */
+  function pad(n, w) { n = String(n); while (n.length < (w || 2)) n = '0' + n; return n; }
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function dt(ms) { return new Date(ms); }
+  function hm(ms) { var x = dt(ms); return pad(x.getHours()) + ':' + pad(x.getMinutes()); }
+  function hms(ms) { var x = dt(ms); return pad(x.getHours()) + ':' + pad(x.getMinutes()) + ':' + pad(x.getSeconds()); }
+  function md(ms) { var x = dt(ms); return pad(x.getMonth() + 1) + '/' + pad(x.getDate()); }
+  function dayKey(ms) { var x = dt(ms); return x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate()); }
+  function dayLabel(ms) {
+    var x = dt(ms), wk = '日一二三四五六'[x.getDay()], y = x.getFullYear(), now = new Date().getFullYear();
+    return (y !== now ? y + '年' : '') + (x.getMonth() + 1) + '月' + x.getDate() + '日 周' + wk;
+  }
+  function durText(ms) {
+    ms = Number(ms) || 0;
+    if (ms <= 0) return '—';
+    if (ms < 1000) return ms + ' 毫秒';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + ' 秒';
+    var m = Math.floor(ms / 60000), sec = Math.round((ms % 60000) / 1000);
+    if (m < 60) return m + ' 分 ' + sec + ' 秒';
+    return Math.floor(m / 60) + ' 小时 ' + (m % 60) + ' 分';
+  }
+  function sizeText(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(2) + ' MB';
+  }
+  function b64ToBytes(b64) {
+    var bin = atob(b64), n = bin.length, a = new Uint8Array(n);
+    for (var i = 0; i < n; i++) a[i] = bin.charCodeAt(i);
+    return a;
+  }
+  function toast(msg) {
+    var t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.classList.remove('show'); }, 2400);
+  }
+
+  /* ---------- 模型 ---------- */
+  function colIndex(t, name) { return t.columns ? t.columns.indexOf(name) : -1; }
+  function cell(t, row, name) { var i = colIndex(t, name); return i < 0 ? null : row.values[i]; }
+  function flat(v) {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'object' && v.blob) return '<blob ' + v.blob.length + 'B>';
+    return v;
+  }
+
+  function parseScreenName(name) {
+    var m = /^Screenshot[_-](\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})[-_](\d{1,3})_?(.*)\.(?:jpg|jpeg|png|webp)$/i.exec(name);
+    if (!m) return null;
+    var ms = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], +(m[7] || 0)).getTime();
+    return { ms: ms, file: name, pkg: (m[8] || '').replace(/\.(jpg|jpeg|png|webp)$/i, '') };
+  }
+  function pairScreen(ms) {
+    var arr = s.screens;
+    if (!arr || !arr.length) return null;
+    var lo = 0, hi = arr.length - 1, best = null, bd = Infinity;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1, delta = Math.abs(arr[mid].ms - ms);
+      if (delta < bd) { bd = delta; best = arr[mid]; }
+      if (arr[mid].ms < ms) lo = mid + 1; else hi = mid - 1;
+    }
+    return best && bd <= 120000 ? { file: best.file, pkg: best.pkg, delta: bd } : null;
+  }
+
+  function buildEvents() {
+    var db = s.db, ev = [], rec = [], T = db.tables;
+    function push(kind, t, obj) {
+      if (typeof t !== 'number' || !isFinite(t) || t < 1e11) return;
+      obj.kind = kind; obj.t = t; ev.push(obj);
+    }
+    if (T.screenshot) T.screenshot.rows.forEach(function (r) {
+      push('shot', cell(T.screenshot, r, 'screenshot_time'), { table: 'screenshot', rowid: r.rowid, data: {} });
+    });
+    if (T.screen_share) T.screen_share.rows.forEach(function (r) {
+      var t = T.screen_share;
+      push('screen', cell(t, r, 'screen_share_start_time'), {
+        table: 'screen_share', rowid: r.rowid,
+        data: {
+          pkg: cell(t, r, 'screen_share_package_name'),
+          start: cell(t, r, 'screen_share_start_time'),
+          end: cell(t, r, 'screen_share_end_time'),
+          dur: cell(t, r, 'duration'), active: cell(t, r, 'is_active')
+        }
+      });
+    });
+    if (T.fraud_phone) T.fraud_phone.rows.forEach(function (r) {
+      var t = T.fraud_phone;
+      push('call', cell(t, r, 'call_start_time'), {
+        table: 'fraud_phone', rowid: r.rowid,
+        data: {
+          start: cell(t, r, 'call_start_time'), end: cell(t, r, 'call_end_time'),
+          loc: cell(t, r, 'tel_location'), op: cell(t, r, 'operator'),
+          md5: cell(t, r, 'tel_number_md5'), dur: cell(t, r, 'duration'),
+          cn: cell(t, r, 'is_chinese_number'), virt: cell(t, r, 'is_virtual_operator'),
+          fraud: cell(t, r, 'is_fraud_call')
+        }
+      });
+    });
+    if (T.airplane_mode) T.airplane_mode.rows.forEach(function (r) {
+      var t = T.airplane_mode;
+      push('air', cell(t, r, 'airplane_mode_change_time'), {
+        table: 'airplane_mode', rowid: r.rowid, data: { on: cell(t, r, 'airplane_mode_on') }
+      });
+    });
+    if (T.install_app) T.install_app.rows.forEach(function (r) {
+      var t = T.install_app;
+      push('install', cell(t, r, 'install_finish_time'), {
+        table: 'install_app', rowid: r.rowid,
+        data: {
+          pkg: cell(t, r, 'pkg_name'), name: cell(t, r, 'app_name'),
+          src: cell(t, r, 'source'), ver: cell(t, r, 'version_code'),
+          md5: cell(t, r, 'md5'), tag: cell(t, r, 'app_tag_id'), sec: cell(t, r, 'security_tag_id')
+        }
+      });
+    });
+    if (T.fraud_url) T.fraud_url.rows.forEach(function (r) {
+      var t = T.fraud_url;
+      push('url', cell(t, r, 'access_time'), { table: 'fraud_url', rowid: r.rowid, data: { type: cell(t, r, 'url_type') } });
+    });
+    if (T.voip_record) T.voip_record.rows.forEach(function (r) {
+      var t = T.voip_record;
+      push('voip', cell(t, r, 'voip_record_start_time'), {
+        table: 'voip_record', rowid: r.rowid,
+        data: {
+          pkg: cell(t, r, 'voip_record_package_name'),
+          start: cell(t, r, 'voip_record_start_time'), end: cell(t, r, 'voip_record_end_time'),
+          dur: cell(t, r, 'duration'), fraud: cell(t, r, 'is_fraud_call')
+        }
+      });
+    });
+    if (T.call_forwarding) T.call_forwarding.rows.forEach(function (r) {
+      var t = T.call_forwarding;
+      push('forward', cell(t, r, 'timestamp'), {
+        table: 'call_forwarding', rowid: r.rowid,
+        data: { reason: cell(t, r, 'reason'), enabled: cell(t, r, 'enabled') }
+      });
+    });
+    ev.sort(function (a, b) { return b.t - a.t; });
+
+    (db.recovered || []).forEach(function (r) {
+      var kind = TABLE_KIND[r.table];
+      if (!kind) return;
+      var t = db.tables[r.table], fake = { rowid: r.rowid, values: r.values };
+      var pick = function (n) { return t ? cell(t, fake, n) : null; };
+      var ms = 0, o = { table: r.table, rowid: r.rowid, gone: true, from: r.from, data: {}, kind: kind };
+      if (kind === 'shot') ms = pick('screenshot_time');
+      else if (kind === 'screen') { ms = pick('screen_share_start_time'); o.data = { pkg: pick('screen_share_package_name'), start: ms, end: pick('screen_share_end_time'), dur: pick('duration') }; }
+      else if (kind === 'call') { ms = pick('call_start_time'); o.data = { loc: pick('tel_location'), op: pick('operator'), md5: pick('tel_number_md5'), dur: pick('duration'), virt: pick('is_virtual_operator'), fraud: pick('is_fraud_call'), start: ms, end: pick('call_end_time') }; }
+      else if (kind === 'air') { ms = pick('airplane_mode_change_time'); o.data = { on: pick('airplane_mode_on') }; }
+      else if (kind === 'install') { ms = pick('install_finish_time'); o.data = { pkg: pick('pkg_name'), name: pick('app_name'), src: pick('source'), ver: pick('version_code') }; }
+      else if (kind === 'url') { ms = pick('access_time'); o.data = { type: pick('url_type') }; }
+      else if (kind === 'voip') { ms = pick('voip_record_start_time'); o.data = { pkg: pick('voip_record_package_name'), dur: pick('duration') }; }
+      else if (kind === 'forward') { ms = pick('timestamp'); o.data = { reason: pick('reason'), enabled: pick('enabled') }; }
+      if (typeof ms !== 'number' || ms < 1e11) return;
+      o.t = ms; rec.push(o);
+    });
+    rec.sort(function (a, b) { return b.t - a.t; });
+
+    s.events = ev;
+    s.recovered = rec;
+  }
+
+  /* ---------- 渲染 ---------- */
+  function countBy(kind, withDeleted) {
+    var n = 0;
+    s.events.forEach(function (e) { if (kind === 'all' || e.kind === kind) n++; });
+    if (withDeleted) s.recovered.forEach(function (e) { if (kind === 'all' || e.kind === kind) n++; });
+    return n;
+  }
+
+  function renderMeta() {
+    var box = $('#meta');
+    var times = s.events.map(function (e) { return e.t; });
+    var span = times.length ? (md(Math.min.apply(null, times)) + '–' + md(Math.max.apply(null, times))) : '—';
+    box.innerHTML =
+      '<div><b>' + s.events.length + '</b><span>现存记录</span></div>' +
+      '<div><b>' + s.recovered.length + '</b><span>可恢复</span></div>' +
+      '<div><b style="font-size:15px;line-height:24px">' + span + '</b><span>时间跨度</span></div>';
+  }
+
+  function renderChips() {
+    var box = $('#chips');
+    if (!s.db) { box.innerHTML = ''; return; }
+    var html = '';
+    if (s.view === 'timeline') {
+      var kinds = ['all'].concat(Object.keys(KINDS).filter(function (k) { return countBy(k, s.showDeleted); }));
+      kinds.forEach(function (k) {
+        var on = s.filter === k;
+        var label = k === 'all' ? '全部' : KINDS[k].label;
+        html += '<button class="chip' + (on ? ' on' : '') + '" data-act="filter" data-kind="' + k + '">' +
+          (on ? ic('check') : '') + label + '<span class="n">' + countBy(k, s.showDeleted) + '</span></button>';
+      });
+      html += '<button class="chip' + (s.showDeleted ? ' on' : '') + '" data-act="del">' +
+        (s.showDeleted ? ic('check') : '') + '含已删除<span class="n">' + s.recovered.length + '</span></button>';
+    } else if (s.view === 'tables') {
+      Object.keys(s.db.tables).forEach(function (n) {
+        var t = s.db.tables[n], on = s.table === n;
+        html += '<button class="chip' + (on ? ' on' : '') + '" data-act="table" data-name="' + esc(n) + '">' +
+          (on ? ic('check') : '') + esc(n) + '<span class="n">' + t.rows.length + '</span></button>';
+      });
+    }
+    box.innerHTML = html;
+  }
+
+  function rowHtml(e) {
+    var k = KINDS[e.kind] || { label: e.kind, icon: 'database', tint: null };
+    var d0 = e.data || {}, title = k.label, sub = '', extra = '';
+    switch (e.kind) {
+      case 'shot': {
+        var p = s.showPair ? pairScreen(e.t) : null;
+        title = '截图';
+        if (p && p.pkg) { sub = '当时前台 <b>' + esc(p.pkg) + '</b>'; extra = esc(p.file); }
+        else if (p) { extra = esc(p.file); }
+        else sub = '只记录了时间戳';
+        break;
+      }
+      case 'screen':
+        title = '屏幕录制';
+        sub = esc(d0.pkg || '未知来源') + ' · ' + durText(d0.dur);
+        extra = hms(d0.start) + ' – ' + hms(d0.end || d0.start) + (d0.active ? ' · 进行中' : '');
+        break;
+      case 'call':
+        title = '通话 · ' + esc(d0.loc || '归属地未知');
+        sub = [d0.op ? esc(d0.op) : '', durText(d0.dur), d0.virt ? '虚拟运营商' : '', d0.fraud ? '<b>涉诈标记</b>' : '']
+          .filter(Boolean).join(' · ');
+        if (d0.md5) extra = '号码摘要 <span class="mono">' + esc(String(d0.md5).slice(0, 18)) + '…</span>';
+        break;
+      case 'air':
+        title = '飞行模式' + (d0.on ? '开启' : '状态变化');
+        sub = '记录值 ' + esc(d0.on);
+        break;
+      case 'install':
+        title = '安装 ' + esc(d0.name || d0.pkg);
+        sub = '<span class="mono">' + esc(d0.pkg) + '</span> · v' + esc(d0.ver);
+        if (d0.src) extra = '来源 ' + esc(d0.src);
+        break;
+      case 'url':
+        title = '访问涉诈链接';
+        sub = '类型码 ' + esc(d0.type);
+        break;
+      case 'voip':
+        title = 'VoIP 通话';
+        sub = esc(d0.pkg || '未知') + ' · ' + durText(d0.dur);
+        break;
+      case 'forward':
+        title = '呼叫转移';
+        sub = 'reason ' + esc(d0.reason) + ' · ' + (d0.enabled ? '已开启' : '已关闭');
+        break;
+    }
+    var style = k.tint ? ' style="--kc:var(--k-' + k.tint + ');--kb:var(--k-' + k.tint + '-bg)"' : '';
+    return '<div class="row' + (e.gone ? ' gone' : '') + '"' + style + '>' +
+      ic(k.icon) +
+      '<div class="body">' +
+        '<div class="t1">' + title + (e.gone ? '<span class="badge">已删除</span>' : '') + '</div>' +
+        (sub ? '<div class="t2">' + sub + '</div>' : '') +
+        (extra ? '<div class="t3 mono">' + extra + '</div>' : '') +
+      '</div>' +
+      '<div class="tm">' + hm(e.t) + '</div>' +
+    '</div>';
+  }
+
+  function renderTimeline() {
+    var list;
+    if (s.filter === 'all') list = s.events.concat(s.showDeleted ? s.recovered : []);
+    else {
+      list = s.events.filter(function (e) { return e.kind === s.filter; });
+      if (s.showDeleted) list = list.concat(s.recovered.filter(function (e) { return e.kind === s.filter; }));
+    }
+    list.sort(function (a, b) { return b.t - a.t; });
+    if (!list.length) {
+      $('#view').innerHTML = '<div class="empty">' + ic('info') + '这一栏没有记录</div>';
+      return;
+    }
+    var out = [], day = null, buf = [], shown = 0, dayCount = {};
+    list.forEach(function (x) { var k = dayKey(x.t); dayCount[k] = (dayCount[k] || 0) + 1; });
+    function flush() {
+      if (!buf.length) return;
+      out.push('<div class="group">' + buf.join('') + '</div>');
+      buf = [];
+    }
+    for (var i = 0; i < list.length && shown < s.shown; i++) {
+      var e = list[i], dk = dayKey(e.t);
+      if (dk !== day) {
+        flush();
+        out.push('<h3 class="day">' + dayLabel(e.t) + '<span class="n">' + dayCount[dk] + ' 条</span></h3>');
+        day = dk;
+      }
+      buf.push(rowHtml(e));
+      shown++;
+    }
+    flush();
+    if (list.length > s.shown) {
+      out.push('<div style="padding:12px"><button class="item" data-act="more" style="justify-content:center;background:var(--surface-low);border-radius:20px">还有 ' +
+        (list.length - s.shown) + ' 条，点此继续</button></div>');
+    }
+    $('#view').innerHTML = out.join('');
+  }
+
+  function renderTables() {
+    var db = s.db;
+    if (!s.table || !db.tables[s.table]) s.table = Object.keys(db.tables)[0];
+    var t = db.tables[s.table];
+    if (!t) { $('#view').innerHTML = '<div class="empty">没有表</div>'; return; }
+    var out = [];
+    if (!t.rows.length) {
+      out.push('<div class="empty">' + ic('database') + esc(t.name) + ' 表里没有现存记录' +
+        (t.columns.length ? '<br>列：' + esc(t.columns.join(', ')) : '') + '</div>');
+    }
+    var timeCol = t.columns.findIndex(function (c) { return /time|_at$/.test(c); });
+    var rows = t.rows.slice().sort(function (a, b) { return b.rowid - a.rowid; });
+    rows.slice(0, s.tableShown).forEach(function (r) {
+      var kv = '';
+      t.columns.forEach(function (c, i) {
+        if (c === '_id') return;
+        kv += '<div class="k">' + esc(c) + '</div><div class="v">' + esc(flat(r.values[i])) + '</div>';
+      });
+      var head = timeCol >= 0 && typeof r.values[timeCol] === 'number'
+        ? dayKey(r.values[timeCol]).slice(5).replace('-', '/') + ' ' + hms(r.values[timeCol]) : '';
+      out.push('<div class="tcard"><div class="th"><span>rowid ' + r.rowid + '</span><span>' + head +
+        '</span></div><div class="kv">' + kv + '</div></div>');
+    });
+    if (rows.length > s.tableShown) {
+      out.push('<div style="padding:2px 12px 14px"><button class="item" data-act="moreTable" style="justify-content:center;background:var(--surface-low);border-radius:20px">还有 ' +
+        (rows.length - s.tableShown) + ' 行，点此继续</button></div>');
+    }
+    $('#view').innerHTML = out.join('');
+  }
+
+  function renderStats() {
+    var db = s.db, st = db.stats || {};
+    var rows = Object.keys(db.tables).map(function (n) { return { n: n, c: db.tables[n].rows.length }; })
+      .sort(function (a, b) { return b.c - a.c; });
+    var max = 1, total = 0;
+    rows.forEach(function (r) { if (r.c > max) max = r.c; total += r.c; });
+
+    var bars = rows.map(function (r) {
+      return '<div class="bar-row"><span class="nm">' + esc(r.n) + '</span>' +
+        '<span class="track"><i class="fill" style="display:block;width:' + Math.max(3, Math.round(r.c / max * 100)) + '%"></i></span>' +
+        '<span class="num">' + r.c + '</span></div>';
+    }).join('');
+
+    var byDay = {};
+    s.events.forEach(function (e) {
+      if (e.kind !== 'shot') return;
+      var k = dayKey(e.t);
+      byDay[k] = (byDay[k] || 0) + 1;
+    });
+    var days = Object.keys(byDay).sort().slice(-14), dmax = 1;
+    days.forEach(function (k) { if (byDay[k] > dmax) dmax = byDay[k]; });
+    var spark = days.map(function (k) {
+      var h = Math.max(6, Math.round(byDay[k] / dmax * 68));
+      return '<span class="col"><i style="height:' + h + 'px"></i>' + k.slice(5).replace('-', '/') + '</span>';
+    }).join('');
+
+    var seq = '';
+    if (db.tables.sqlite_sequence) {
+      seq = db.tables.sqlite_sequence.rows.map(function (r) {
+        return '<div class="k">' + esc(r.values[0]) + '</div><div class="v">累计 ' + esc(r.values[1]) + ' 条</div>';
+      }).join('');
+    }
+
+    $('#view').innerHTML =
+      '<div class="panel"><h2>数据库</h2><div class="kv">' +
+        '<div class="k">文件</div><div class="v">' + esc(s.name || '—') + '</div>' +
+        '<div class="k">来源</div><div class="v">' + esc(s.src === 'root' ? '系统路径（root 读取）' : s.src === 'pick' ? '手动选择' : '未知') + '</div>' +
+        '<div class="k">体积</div><div class="v">' + sizeText(st.fileSize || 0) + '，' + (st.pageSize || 0) + ' B/页 × ' + (st.pageCount || 0) + ' 页</div>' +
+        '<div class="k">编码</div><div class="v">' + esc(st.encoding || '—') + '</div>' +
+        '<div class="k">全部行数</div><div class="v">' + total + ' 条</div>' +
+        '<div class="k">可恢复</div><div class="v">' + s.recovered.length + ' 条（空闲页 ' + (st.freedPages || 0) + '）</div>' +
+        '<div class="k">locale</div><div class="v">' + esc(db.tables.android_metadata && db.tables.android_metadata.rows[0]
+          ? db.tables.android_metadata.rows[0].values[0] : '—') + '</div>' +
+      '</div></div>' +
+      '<div class="panel"><h2>各表记录数</h2><div class="bars">' + bars + '</div></div>' +
+      '<div class="panel"><h2>每天截图数</h2>' + (days.length
+        ? '<div class="spark">' + spark + '</div>'
+        : '<div style="font-size:13px;color:var(--on-surface-var)">没有截图记录</div>') + '</div>' +
+      (seq ? '<div class="panel"><h2>累计写入（sqlite_sequence）</h2><div class="kv">' + seq + '</div></div>' : '');
+  }
+
+  function item(act, icon, label, support, disabled) {
+    return '<button class="item" data-act="' + act + '"' + (disabled ? ' disabled' : '') + '>' +
+      ic(icon) + '<span class="lbl">' + label + (support ? '<small>' + support + '</small>' : '') + '</span>' +
+      ic('chevron') + '</button>';
+  }
+
+  function renderMore() {
+    var hasBridge = !!window.Android;
+    $('#view').innerHTML =
+      '<div class="panel"><h2>读取</h2>' +
+        item('auto', 'folder', '从系统路径读取', hasBridge ? '自动尝试五个常见位置，需要 root' : '需要在 App 内运行', !hasBridge) +
+        item('pick', 'download', '选择 db 文件', '系统文件选择器，不需要 root') +
+        (hasBridge ? item('screens', 'scan', '扫描相册补全截图来源', '读取 Screenshots 文件名做配对') : '') +
+      '</div>' +
+      '<div class="panel"><h2>导出</h2>' +
+        item('expTxt', 'download', '时间线 TXT', '按天分组的纯文本') +
+        item('expJson', 'download', '全量 JSON', '含所有字段与恢复记录') +
+        item('expCsv', 'download', '事件 CSV', '带 BOM，Excel 直接开') +
+      '</div>' +
+      '<div class="panel"><h2>说明</h2><div style="font-size:13px;line-height:1.8;color:var(--on-surface-var)">' +
+        '全程只读，解析和恢复都在内存里完成，不会写回你的数据库。<br><br>' +
+        '截图表只存时间戳，「扫描相册」会把 <span class="mono">Pictures/Screenshots</span> 的文件名对上来，还原当时前台是哪个 App。<br><br>' +
+        '「含已删除」靠空闲页和页内空闲块里的残留，系统开了 secure_delete 的话这部分会被清零，能捞回的会明显变少。<br><br>' +
+        '原始路径通常是 <span class="mono">/data/misc/user/0/securitycenter/fraud_detection_data.db</span>，由手机管家的反诈服务写入。' +
+      '</div></div>';
+  }
+
+  function render() {
+    try {
+      var tb = document.querySelector('.topbar');
+      if (tb && document.documentElement && document.documentElement.style) {
+        document.documentElement.style.setProperty('--topbar-h', tb.offsetHeight + 'px');
+      }
+    } catch (e) { }
+    renderMeta();
+    renderChips();
+    if (!s.db) {
+      if (s.view === 'more') { renderMore(); return; }
+      $('#view').innerHTML = '<div class="empty">' + ic('folder') +
+        '还没有打开数据库<br>点左上角按钮读系统路径，或到「更多」里选一个文件</div>';
+      return;
+    }
+    if (s.view === 'timeline') renderTimeline();
+    else if (s.view === 'tables') renderTables();
+    else if (s.view === 'stats') renderStats();
+    else renderMore();
+  }
+
+  /* ---------- 载入 ---------- */
+  function applyBytes(bytes, name, path, src) {
+    try {
+      s.db = SQLiteLite.open(bytes);
+    } catch (e) {
+      toast('解析失败：' + (e && e.message ? e.message : e));
+      return;
+    }
+    s.name = name || 'database.db';
+    s.path = path || '';
+    s.src = src || '';
+    s.filter = 'all'; s.shown = 240; s.tableShown = 80; s.table = null;
+    buildEvents();
+    setView('timeline');
+    render();
+    toast('已解析 ' + s.events.length + ' 条现存记录' + (s.recovered.length ? '，可恢复 ' + s.recovered.length + ' 条' : ''));
+  }
+
+  function setView(v) {
+    s.view = v;
+    document.querySelectorAll('#nav button').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-view') === v);
+    });
+  }
+
+  function loadScreens() {
+    if (!window.Android || !Android.screenshots || s.screens.length) return;
+    try {
+      var list = JSON.parse(Android.screenshots() || '[]'), arr = [];
+      list.forEach(function (it) {
+        var p = parseScreenName(it.name || it);
+        if (p) arr.push(p);
+      });
+      arr.sort(function (a, b) { return a.ms - b.ms; });
+      s.screens = arr;
+      s.showPair = arr.length > 0;
+      if (s.view === 'timeline') render();
+      if (arr.length) toast('配对了 ' + arr.length + ' 张截图');
+    } catch (e) { /* 忽略 */ }
+  }
+
+  function autoLoad() {
+    if (!window.Android || !Android.autoLoad) { toast('这里读不到系统路径，请手动选文件'); return; }
+    toast('正在读取…');
+    setTimeout(function () {
+      var r;
+      try { r = JSON.parse(Android.autoLoad()); }
+      catch (e) { toast('读取出错：' + e); return; }
+      if (r && r.ok) {
+        applyBytes(b64ToBytes(r.b64), r.name, r.path, 'root');
+        setTimeout(loadScreens, 60);
+      } else {
+        toast((r && r.error) || '没找到数据库，试试手动选择');
+      }
+    }, 30);
+  }
+
+  /* ---------- 导出 ---------- */
+  function allEvents(withDeleted) {
+    var list = s.events.slice();
+    if (withDeleted) list = list.concat(s.recovered);
+    return list.sort(function (a, b) { return a.t - b.t; });
+  }
+  function evText(e) {
+    var d0 = e.data || {};
+    switch (e.kind) {
+      case 'shot': { var p = pairScreen(e.t); return '截图' + (p && p.pkg ? ' @' + p.pkg : ''); }
+      case 'screen': return '屏幕录制 ' + (d0.pkg || '') + ' ' + durText(d0.dur);
+      case 'call': return '通话 ' + (d0.loc || '') + ' ' + (d0.op || '') + ' ' + durText(d0.dur);
+      case 'air': return '飞行模式 ' + (d0.on ? '开启' : '变化');
+      case 'install': return '安装 ' + (d0.name || '') + ' (' + (d0.pkg || '') + ') v' + d0.ver;
+      case 'url': return '涉诈链接 type=' + d0.type;
+      case 'voip': return 'VoIP ' + (d0.pkg || '') + ' ' + durText(d0.dur);
+      case 'forward': return '呼叫转移 ' + (d0.enabled ? '开启' : '关闭');
+      default: return e.kind;
+    }
+  }
+  function exportFile(kind) {
+    if (!s.db) { toast('先打开一个数据库'); return; }
+    var name, content;
+    if (kind === 'txt') {
+      var lines = ['# 反诈库直查 导出', '# 文件：' + s.name, '# 时间：' + new Date().toLocaleString(), ''];
+      var cur = '';
+      allEvents(s.showDeleted).forEach(function (e) {
+        var dk = dayKey(e.t);
+        if (dk !== cur) { lines.push(''); lines.push('== ' + dayLabel(e.t) + ' =='); cur = dk; }
+        lines.push(hms(e.t) + '  ' + (e.gone ? '[已删除] ' : '') + evText(e));
+      });
+      name = 'frauddb-timeline.txt'; content = lines.join('\n');
+    } else if (kind === 'json') {
+      var out = { file: s.name, path: s.path, exportedAt: new Date().toISOString(), stats: s.db.stats, tables: {}, recovered: [] };
+      Object.keys(s.db.tables).forEach(function (n) {
+        var t = s.db.tables[n];
+        out.tables[n] = t.rows.map(function (r) {
+          var o = { rowid: r.rowid };
+          t.columns.forEach(function (c, i) { if (c !== '_id') o[c] = flat(r.values[i]); });
+          return o;
+        });
+      });
+      (s.db.recovered || []).forEach(function (r) {
+        var t = s.db.tables[r.table], o = { table: r.table, rowid: r.rowid, from: r.from };
+        if (t) t.columns.forEach(function (c, i) { if (c !== '_id') o[c] = flat(r.values[i]); });
+        out.recovered.push(o);
+      });
+      name = 'frauddb.json'; content = JSON.stringify(out, null, 2);
+    } else {
+      var rows = [['时间', '日期', '类型', '描述', '已删除']];
+      allEvents(s.showDeleted).forEach(function (e) {
+        rows.push([hms(e.t), dayKey(e.t), KINDS[e.kind] ? KINDS[e.kind].label : e.kind, evText(e), e.gone ? '1' : '']);
+      });
+      name = 'frauddb-events.csv';
+      content = '\ufeff' + rows.map(function (r) {
+        return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
+      }).join('\n');
+    }
+    if (window.Android && Android.exportText) Android.exportText(name, content);
+    else {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
+      a.download = name; a.click();
+    }
+  }
+
+  /* ---------- 交互 ---------- */
+  function bind() {
+    document.addEventListener('click', function (ev) {
+      var t = ev.target.closest('[data-act],[data-view]');
+      if (!t) return;
+      if (t.hasAttribute('data-view')) {
+        setView(t.getAttribute('data-view'));
+        s.shown = 240;
+        render();
+        return;
+      }
+      var act = t.getAttribute('data-act');
+      if (act === 'filter') { s.filter = t.getAttribute('data-kind'); s.shown = 240; render(); }
+      else if (act === 'del') { s.showDeleted = !s.showDeleted; render(); }
+      else if (act === 'table') { s.table = t.getAttribute('data-name'); s.tableShown = 80; render(); }
+      else if (act === 'more') { s.shown += 240; render(); }
+      else if (act === 'moreTable') { s.tableShown += 80; render(); }
+      else if (act === 'auto') autoLoad();
+      else if (act === 'pick') pick();
+      else if (act === 'screens') { s.screens = []; loadScreens(); }
+      else if (act === 'expTxt') exportFile('txt');
+      else if (act === 'expJson') exportFile('json');
+      else if (act === 'expCsv') exportFile('csv');
+    });
+
+    var bo = $('#btnOpen'), br = $('#btnReload');
+    if (bo) bo.addEventListener('click', pick);
+    if (br) br.addEventListener('click', function () { s.db ? render() : autoLoad(); });
+    var fi = $('#fileInput');
+    if (fi) fi.addEventListener('change', function (e) {
+      var f = e.target.files && e.target.files[0];
+      if (!f) return;
+      var fr = new FileReader();
+      fr.onload = function () { applyBytes(new Uint8Array(fr.result), f.name, '', 'pick'); };
+      fr.readAsArrayBuffer(f);
+    });
+  }
+
+  function pick() {
+    if (window.Android && Android.pickFile) Android.pickFile();
+    else $('#fileInput').click();
+  }
+
+  window.onPickedDb = function (name, b64) {
+    if (!b64) { toast('读取失败'); return; }
+    applyBytes(b64ToBytes(b64), name, '', 'pick');
+    setTimeout(loadScreens, 60);
+  };
+  window.onBridgeError = function (m) { toast(m || '读取失败'); };
+  window.appAutoLoad = autoLoad;
+  window.appRender = function (v) { if (v) setView(v); render(); };
+
+  document.addEventListener('DOMContentLoaded', function () {
+    bind();
+    if (window.Android && Android.autoLoad) setTimeout(autoLoad, 150);
+    else render();
+  });
+})();

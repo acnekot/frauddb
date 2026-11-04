@@ -1,0 +1,22 @@
+# 构建产物
+build/
+android/assets/
+*.apk
+*.idsig
+*.dex
+*.class
+
+# 签名材料，绝不入库
+*.keystore
+*.jks
+*.p12
+
+# 本地测试
+tmp_test/
+*.db
+*.db-wal
+*.db-shm
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
