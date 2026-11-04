@@ -575,9 +575,10 @@
         item('logcopy', 'download', '复制全部日志', '直接贴出来就能看') +
       '</div>' +
       '<div class="panel"><h2>说明</h2><div style="font-size:13px;line-height:1.8;color:var(--on-surface-var)">' +
-        '全程只读，解析和恢复都在内存里完成，不会写回你的数据库。<br><br>' +
-        '截图表只存时间戳，「扫描相册」会把 <span class="mono">Pictures/Screenshots</span> 的文件名对上来，还原当时前台是哪个 App。<br><br>' +
-        '「含已删除」靠空闲页和页内空闲块里的残留，系统开了 secure_delete 的话这部分会被清零，能捞回的会明显变少。<br><br>' +
+        '只读工具：解析与恢复都在内存里完成，不会写回原始数据库。<br><br>' +
+        '截图表只有时间戳。开启相册权限后可按时间配到真实图片与录屏，显示缩略图，点击可在应用内查看或播放。<br><br>' +
+        '号码还原与数据库保存都是默认关闭的开关，在「更多」里手动打开，关掉即释放。<br><br>' +
+        '「含已删除」依赖空闲页与页内空闲块的残留，系统开启 secure_delete 时基本捞不到。<br><br>' +
         '原始路径通常是 <span class="mono">/data/misc/user/0/securitycenter/fraud_detection_data.db</span>，由手机管家的反诈服务写入。' +
       '</div></div>';
   }
@@ -945,6 +946,9 @@
         '<div class="k">存储位置</div><div class="v mono">' + esc(p.path || '—') + '</div>' +
         '<div class="k">状态</div><div class="v">' + esc(info) + '</div>' +
         '</div>';
+      html += item('storePick', 'folder', '选择保存目录',
+        p.custom ? '当前为自定义目录' : '默认存在应用私有目录，可改成任意目录');
+      if (p.custom) html += item('storeReset', 'refresh', '恢复默认位置', '改回应用私有目录');
       html += item('persistSave', 'download', '立即保存当前数据库', '把当前解析的库写入上面的位置');
       html += item('persistClear', 'chevron', '清除已保存的副本', '删除本地副本，时间线仍在内存中');
     }
@@ -1152,6 +1156,19 @@
         render();
       }
       else if (act === 'revealReload') { loadCallLog(); loadContacts(); render(); }
+      else if (act === 'storePick') {
+        if (window.Android && Android.pickStoreDir) Android.pickStoreDir();
+        else toast('需要在 App 内运行');
+      }
+      else if (act === 'storeReset') {
+        try { s.persist = JSON.parse(Android.resetStoreDir() || '{}'); } catch (e) { }
+        toast('已恢复默认位置');
+        if (s.lastB64 && s.persist.enabled) {
+          try { Android.persistCurrent(s.name, s.src, s.lastB64); } catch (e) { }
+          s.persist = persistInfo();
+        }
+        render();
+      }
       else if (act === 'persistToggle') {
         var b = s.persist || {};
         var nxt = !b.enabled;
@@ -1236,6 +1253,16 @@
   window.appAutoLoad = autoLoad;
   window.appRender = function (v) { if (v) setView(v); render(); };
   window.appLayout = function () { return measureLayout(true); };
+  window.appStoreChanged = function () {
+    s.persist = persistInfo();
+    if (s.lastB64 && s.persist.enabled) {
+      try { Android.persistCurrent(s.name, s.src, s.lastB64); } catch (e) { }
+      s.persist = persistInfo();
+    }
+    toast('存储位置已更新');
+    render();
+  };
+
   window.appPermChanged = function () {
     s.perms = loadPerms();
     if (s.reveal) { loadCallLog(); loadContacts(); }

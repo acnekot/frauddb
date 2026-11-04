@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
+import android.provider.DocumentsContract;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -44,6 +45,7 @@ public class MainActivity extends Activity {
 
     private static final int REQ_PICK = 7001;
     private static final int REQ_PERM = 7002;
+    private static final int REQ_TREE = 7003;
     private static final int SU_TIMEOUT_MS = 12000;
     private static final int LOG_MAX_LINES = 800;
     private static final long LOG_MAX_BYTES = 512 * 1024;
@@ -660,6 +662,87 @@ public class MainActivity extends Activity {
             return new File(d, "fraud_detection_data.db");
         }
 
+        private static final String DB_NAME = "fraud_detection_data.db";
+
+        private Uri storeTree() {
+            String s2 = getSharedPreferences("fkmiui", MODE_PRIVATE).getString("storeTree", "");
+            return s2 == null || s2.isEmpty() ? null : Uri.parse(s2);
+        }
+
+        private String storeLabel() {
+            Uri t = storeTree();
+            if (t == null) return "应用私有目录";
+            String last = t.getLastPathSegment();
+            try { last = java.net.URLDecoder.decode(last, "UTF-8"); } catch (Throwable ignored) { }
+            int i = last == null ? -1 : last.indexOf(':');
+            if (i >= 0) last = last.substring(i + 1);
+            return "自定义目录 / " + last;
+        }
+
+        private Uri findInTree(Uri tree, String name) {
+            try {
+                Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree,
+                        DocumentsContract.getTreeDocumentId(tree));
+                Cursor c = getContentResolver().query(children, new String[]{
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null);
+                if (c != null) {
+                    while (c.moveToNext()) {
+                        if (name.equals(c.getString(1))) {
+                            Uri u = DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0));
+                            c.close();
+                            return u;
+                        }
+                    }
+                    c.close();
+                }
+            } catch (Throwable e) {
+                log("SAVE", "tree 查询失败 " + e);
+            }
+            return null;
+        }
+
+        private boolean writeBytesToStore(byte[] data) throws Exception {
+            Uri tree = storeTree();
+            if (tree == null) {
+                File f = persistedDb();
+                FileOutputStream fos = new FileOutputStream(f);
+                fos.write(data);
+                fos.close();
+                return true;
+            }
+            Uri doc = findInTree(tree, DB_NAME);
+            if (doc == null) {
+                doc = DocumentsContract.createDocument(getContentResolver(), tree,
+                        "application/octet-stream", DB_NAME);
+            }
+            if (doc == null) throw new Exception("createDocument 返回 null");
+            OutputStream os = getContentResolver().openOutputStream(doc, "wt");
+            os.write(data);
+            os.close();
+            return true;
+        }
+
+        private byte[] readBytesFromStore() throws Exception {
+            Uri tree = storeTree();
+            if (tree == null) return readFile(persistedDb());
+            Uri doc = findInTree(tree, DB_NAME);
+            if (doc == null) return null;
+            InputStream in = getContentResolver().openInputStream(doc);
+            byte[] d = drain(in);
+            in.close();
+            return d;
+        }
+
+        private boolean deleteFromStore() {
+            Uri tree = storeTree();
+            if (tree == null) return persistedDb().delete();
+            Uri doc = findInTree(tree, DB_NAME);
+            if (doc == null) return true;
+            try { return DocumentsContract.deleteDocument(getContentResolver(), doc); }
+            catch (Throwable e) { log("SAVE", "删除失败 " + e); return false; }
+        }
+
         private File persistedMeta() {
             return new File(new File(getFilesDir(), "imported"), "meta.json");
         }
@@ -684,8 +767,11 @@ public class MainActivity extends Activity {
                     savedAt = o.optLong("savedAt", 0);
                 }
             } catch (Throwable ignored) { }
+            String shown = storeTree() == null ? f.getAbsolutePath() : (storeLabel() + " / " + DB_NAME);
             return "{\"enabled\":" + on + ",\"exists\":" + exists
-                    + ",\"path\":" + q(f.getAbsolutePath())
+                    + ",\"custom\":" + (storeTree() != null)
+                    + ",\"label\":" + q(storeLabel())
+                    + ",\"path\":" + q(shown)
                     + ",\"size\":" + (exists ? f.length() : 0)
                     + ",\"name\":" + q(name)
                     + ",\"src\":" + q(src)
@@ -712,10 +798,7 @@ public class MainActivity extends Activity {
             }
             try {
                 byte[] data = Base64.decode(b64, Base64.DEFAULT);
-                File f = persistedDb();
-                FileOutputStream fos = new FileOutputStream(f);
-                fos.write(data);
-                fos.close();
+                writeBytesToStore(data);
                 org.json.JSONObject meta = new org.json.JSONObject();
                 meta.put("name", name == null ? "" : name);
                 meta.put("src", src == null ? "" : src);
@@ -724,8 +807,10 @@ public class MainActivity extends Activity {
                 FileOutputStream mf = new FileOutputStream(persistedMeta());
                 mf.write(meta.toString().getBytes("UTF-8"));
                 mf.close();
-                log("SAVE", "已保存副本 " + f.getAbsolutePath() + " " + data.length + " 字节");
-                return "{\"ok\":true,\"path\":" + q(f.getAbsolutePath()) + ",\"size\":" + data.length + "}";
+                String shown = storeTree() == null ? persistedDb().getAbsolutePath()
+                        : (storeLabel() + " / " + DB_NAME);
+                log("SAVE", "已保存副本 " + shown + " " + data.length + " 字节");
+                return "{\"ok\":true,\"path\":" + q(shown) + ",\"size\":" + data.length + "}";
             } catch (Throwable e) {
                 log("SAVE", "保存失败 " + e);
                 return "{\"ok\":false,\"error\":" + q(String.valueOf(e)) + "}";
@@ -735,10 +820,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String loadPersisted() {
             if (!persistEnabled()) return "{\"ok\":false,\"error\":\"disabled\"}";
-            File f = persistedDb();
-            if (!f.exists() || f.length() == 0) return "{\"ok\":false,\"error\":\"empty\"}";
             try {
-                byte[] data = readFile(f);
+                byte[] data = readBytesFromStore();
                 if (data == null || data.length < 16) return "{\"ok\":false,\"error\":\"read\"}";
                 String name = "fraud_detection_data.db", src = "stored";
                 try {
@@ -759,12 +842,36 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String clearPersisted() {
-            File f = persistedDb();
-            long freed = f.exists() ? f.length() : 0;
-            boolean ok = !f.exists() || f.delete();
+            long freed = storeTree() == null ? (persistedDb().exists() ? persistedDb().length() : 0) : 0;
+            boolean ok = deleteFromStore();
             persistedMeta().delete();
             log("SAVE", "清除副本 " + ok + "，释放 " + freed + " 字节");
             return "{\"ok\":" + ok + ",\"freed\":" + freed + "}";
+        }
+
+        @JavascriptInterface
+        public void pickStoreDir() {
+            ui.post(new Runnable() {
+                public void run() {
+                    Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                            | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    try {
+                        startActivityForResult(i, REQ_TREE);
+                    } catch (Throwable e) {
+                        log("SAVE", "打不开目录选择器 " + e);
+                        toast("打不开目录选择器");
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public String resetStoreDir() {
+            getSharedPreferences("fkmiui", MODE_PRIVATE).edit().remove("storeTree").apply();
+            log("SAVE", "存储位置恢复为应用私有目录");
+            return persistInfo();
         }
 
         @JavascriptInterface
@@ -1071,6 +1178,32 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+
+        if (req == REQ_TREE) {
+            if (res != RESULT_OK || data == null || data.getData() == null) {
+                log("SAVE", "用户取消选择目录");
+                return;
+            }
+            Uri tree = data.getData();
+            try {
+                getContentResolver().takePersistableUriPermission(tree,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            } catch (Throwable e) {
+                log("SAVE", "持久化目录权限失败 " + e);
+            }
+            getSharedPreferences("fkmiui", MODE_PRIVATE).edit()
+                    .putString("storeTree", tree.toString()).apply();
+            log("SAVE", "存储位置改为 " + tree);
+            if (web != null) {
+                web.post(new Runnable() {
+                    public void run() {
+                        web.evaluateJavascript("window.appStoreChanged && window.appStoreChanged()", null);
+                    }
+                });
+            }
+            return;
+        }
+
         if (req != REQ_PICK) return;
         if (res != RESULT_OK || data == null || data.getData() == null) {
             log("PICK", "用户取消或没有返回文件");
