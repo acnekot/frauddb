@@ -1095,6 +1095,31 @@ public class MainActivity extends Activity {
             }
         }
 
+        /** root 自检（异步）：后台线程跑，完成后回调 JS，避免卡住页面 */
+        @JavascriptInterface
+        public void selfTestAsync() {
+            new Thread(new Runnable() {
+                public void run() {
+                    String json;
+                    try {
+                        json = selfTest();
+                    } catch (Throwable e) {
+                        log("TEST", "自检异常 " + e);
+                        json = "{\"steps\":[],\"verdict\":" + q("自检异常：" + e) + "}";
+                    }
+                    final String payload = json;
+                    ui.post(new Runnable() {
+                        public void run() {
+                            if (web != null) {
+                                web.evaluateJavascript(
+                                        "window.onSelfTestDone && window.onSelfTestDone(" + q(payload) + ")", null);
+                            }
+                        }
+                    });
+                }
+            }).start();
+        }
+
         /** root 自检：每步都记录，返回结构化结果 */
         @JavascriptInterface
         public String selfTest() {

@@ -53,7 +53,7 @@
     perms: null, callIndex: {}, callIndexRaw: {}, callList: [],
     persist: { enabled: false }, lastB64: '',
     reveal: false, contactIndex: {}, contactIndexRaw: {}, bookCount: 0,
-    dbs: [], saved: [], savedInfo: {}, mask: true, wm: true
+    dbs: [], saved: [], savedInfo: {}, mask: true, wm: true, testing: false
   };
 
   /* ---------- 工具 ---------- */
@@ -657,12 +657,14 @@
     var body = lines.length
       ? lines.map(function (l) { return esc(l); }).join('\n')
       : '（还没有日志，先跑一次 root 自检）';
-    var tip = s.verdict ? '<div class="verdict">' + esc(s.verdict) + '</div>' : '';
+    var tip = s.testing
+      ? '<div class="verdict">正在自检，请稍候…</div>'
+      : (s.verdict ? '<div class="verdict">' + esc(s.verdict) + '</div>' : '');
     $('#view').innerHTML =
       tip +
       '<div class="panel" style="padding:12px">' +
         '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">' +
-          '<button class="chip" data-act="selftest">跑自检</button>' +
+          '<button class="chip" data-act="selftest">' + (s.testing ? '自检中…' : '跑自检') + '</button>' +
           '<button class="chip" data-act="logcopy">复制</button>' +
           '<button class="chip" data-act="logexport">导出</button>' +
           '<button class="chip" data-act="logclear">清空</button>' +
@@ -713,19 +715,22 @@
   }
 
   function runSelfTest() {
-    if (!window.Android || !Android.selfTest) { toast('需要在 App 内运行'); return; }
-    toast('正在自检…');
-    setTimeout(function () {
-      try {
-        var r = JSON.parse(Android.selfTest() || '{}');
-        s.verdict = r.verdict || '';
-        toast('自检完成');
-      } catch (e) {
-        toast('自检失败：' + e);
+    if (!window.Android) { toast('需要在 App 内运行'); return; }
+    s.testing = true;
+    setView('logs');
+    render();
+    toast('正在自检，跑完自动刷新…');
+    try {
+      if (Android.selfTestAsync) Android.selfTestAsync();
+      else if (Android.selfTest) {
+        var r2 = JSON.parse(Android.selfTest() || '{}');
+        window.onSelfTestDone(JSON.stringify(r2));
       }
-      setView('logs');
+    } catch (e) {
+      s.testing = false;
+      toast('自检失败：' + e);
       render();
-    }, 20);
+    }
   }
 
   function getWm() {
@@ -1029,6 +1034,7 @@
     renderWatermark();
     renderMeta();
     renderChips();
+    if (s.view === 'logs') { renderLogs(); return; }
     if (!s.db) {
       if (s.view === 'more') { renderMore(); return; }
       $('#view').innerHTML = '<div class="empty">' + ic('folder') +
@@ -1464,6 +1470,19 @@
   window.appAutoLoad = autoLoad;
   window.appRender = function (v) { if (v) setView(v); render(); };
   window.appLayout = function () { return measureLayout(true); };
+  window.onSelfTestDone = function (json) {
+    s.testing = false;
+    try {
+      var r = typeof json === 'string' ? JSON.parse(json) : json;
+      s.verdict = (r && r.verdict) || '自检完成，但没有拿到结论';
+    } catch (e) {
+      s.verdict = '自检结果解析失败';
+    }
+    setView('logs');
+    render();
+    toast('自检完成');
+  };
+
   window.appStoreChanged = function () {
     s.persist = persistInfo();
     if (s.lastB64 && s.persist.enabled) {
