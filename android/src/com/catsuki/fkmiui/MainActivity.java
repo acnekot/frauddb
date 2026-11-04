@@ -507,7 +507,9 @@ public class MainActivity extends Activity {
                     ? Manifest.permission.READ_MEDIA_IMAGES : Manifest.permission.READ_EXTERNAL_STORAGE);
             boolean vid = Build.VERSION.SDK_INT < 33 || granted(Manifest.permission.READ_MEDIA_VIDEO);
             boolean call = granted(Manifest.permission.READ_CALL_LOG);
+            boolean contacts = granted(Manifest.permission.READ_CONTACTS);
             return "{\"images\":" + img + ",\"video\":" + vid + ",\"calllog\":" + call
+                    + ",\"contacts\":" + contacts
                     + ",\"sdk\":" + Build.VERSION.SDK_INT + "}";
         }
 
@@ -518,12 +520,59 @@ public class MainActivity extends Activity {
             String[] ps;
             if ("calllog".equals(which)) {
                 ps = new String[]{Manifest.permission.READ_CALL_LOG};
+            } else if ("contacts".equals(which)) {
+                ps = new String[]{Manifest.permission.READ_CONTACTS};
             } else if (Build.VERSION.SDK_INT >= 33) {
                 ps = new String[]{Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO};
             } else {
                 ps = new String[]{Manifest.permission.READ_EXTERNAL_STORAGE};
             }
             requestPermissions(ps, REQ_PERM);
+        }
+
+        /** 通讯录：号码 + 显示名，带两种 md5 形式 */
+        @JavascriptInterface
+        public String contacts() {
+            if (!granted(Manifest.permission.READ_CONTACTS)) {
+                log("BOOK", "没有 READ_CONTACTS，跳过通讯录");
+                return "{\"ok\":false,\"error\":\"no-permission\"}";
+            }
+            log("BOOK", "开始读取通讯录");
+            StringBuilder sb = new StringBuilder("{\"ok\":true,\"items\":[");
+            int n = 0;
+            Cursor c = null;
+            java.util.HashSet<String> seen = new java.util.HashSet<>();
+            try {
+                String[] proj = {
+                        android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                        android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER};
+                c = getContentResolver().query(
+                        android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                        proj, null, null, null);
+                if (c != null) {
+                    while (c.moveToNext() && n < 5000) {
+                        String name = c.getString(0);
+                        String num = c.getString(1);
+                        if (num == null) continue;
+                        String digits = num.replaceAll("[^0-9+]", "");
+                        if (!seen.add(digits)) continue;
+                        if (n > 0) sb.append(',');
+                        sb.append("{\"name\":").append(q(name))
+                                .append(",\"number\":").append(q(num))
+                                .append(",\"md5\":").append(q(md5hex(digits)))
+                                .append(",\"md5Raw\":").append(q(md5hex(num)))
+                                .append('}');
+                        n++;
+                    }
+                }
+                log("BOOK", "读到 " + n + " 个联系人号码");
+            } catch (Throwable e) {
+                log("BOOK", "读取失败 " + e);
+                return "{\"ok\":false,\"error\":" + q(String.valueOf(e)) + "}";
+            } finally {
+                if (c != null) c.close();
+            }
+            return sb.append("]}").toString();
         }
 
         /** 系统通话记录，带号码 md5 方便和库里配对 */

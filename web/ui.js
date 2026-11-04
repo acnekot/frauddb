@@ -51,7 +51,8 @@
     shown: 240, showDeleted: true, tableShown: 80,
     version: '', update: null, checking: false, downloaded: '',
     perms: null, callIndex: {}, callIndexRaw: {}, callList: [],
-    persist: { enabled: false }, lastB64: ''
+    persist: { enabled: false }, lastB64: '',
+    reveal: false, contactIndex: {}, contactIndexRaw: {}, bookCount: 0
   };
 
   /* ---------- 工具 ---------- */
@@ -335,10 +336,14 @@
         var kv2 = [];
         if (d0.md5) kv2.push('号码摘要 ' + esc(String(d0.md5).slice(0, 18)) + '…');
         if (pc) {
-          kv2.push('系统记录 ' + hms(pc.it.date) + ' · ' +
-            (pc.it.dur ? durText(pc.it.dur * 1000) : '未接通') +
-            (pc.how === 'time' ? ' · 按时间匹配' : '') +
-            (pc.it.geo ? ' · ' + esc(pc.it.geo) : ''));
+          var srcTag = pc.how === 'contact' ? '通讯录'
+            : pc.how === 'time' ? '按时间匹配' : '通话记录';
+          var bits2 = [srcTag];
+          if (pc.it.date) bits2.push(hms(pc.it.date));
+          if (pc.it.dur) bits2.push(durText(pc.it.dur * 1000));
+          else if (pc.it.date) bits2.push('未接通');
+          if (pc.it.geo) bits2.push(esc(pc.it.geo));
+          kv2.push(bits2.join(' · '));
         }
         extra = kv2.join('<br>');
         break;
@@ -534,6 +539,9 @@
         mediaOk ? '相册权限已授予' : '授予相册权限',
         mediaOk ? '可配对截图与录屏，显示缩略图并可应用内查看'
                 : '不授权也能用，只是没有缩略图和配对') +
+      item('permcontacts', 'folder',
+        (s.perms && s.perms.contacts) ? '通讯录权限已授予' : '授予通讯录权限',
+        (s.perms && s.perms.contacts) ? '可与库里的号码哈希比对' : '不给也能用，只是少一路比对') +
       item('permcall', 'call',
         callOk ? '通话记录权限已授予' : '授予通话记录权限',
         callOk ? '可把库里的号码 md5 还原成明文号码与联系人'
@@ -547,6 +555,7 @@
     $('#view').innerHTML =
       versionPanel() +
       persistPanel() +
+      revealPanel() +
       permPanel() +
       '<div class="panel"><h2>读取</h2>' +
         item('auto', 'folder', '从系统路径读取', hasBridge ? '自动尝试五个常见位置，需要 root' : '需要在 App 内运行', !hasBridge) +
@@ -655,6 +664,64 @@
     }, 20);
   }
 
+  function getReveal() {
+    try { return localStorage.getItem('fkmiui.reveal') === '1'; } catch (e) { return false; }
+  }
+
+  function setReveal(v) {
+    s.reveal = !!v;
+    try { localStorage.setItem('fkmiui.reveal', v ? '1' : '0'); } catch (e) { }
+    if (!v) {
+      s.callIndex = {}; s.callIndexRaw = {}; s.callList = [];
+      s.contactIndex = {}; s.contactIndexRaw = {}; s.bookCount = 0;
+    }
+  }
+
+  function loadContacts() {
+    if (!window.Android || !Android.contacts) return;
+    var p = s.perms || {};
+    if (!s.reveal || !p.contacts) { s.contactIndex = {}; s.contactIndexRaw = {}; s.bookCount = 0; return; }
+    var r;
+    try { r = JSON.parse(Android.contacts() || '{}'); } catch (e) { r = { ok: false, error: String(e) }; }
+    if (!r.ok) { toast('通讯录读取失败：' + (r.error || '未知')); return; }
+    var raw = {}, norm = {};
+    (r.items || []).forEach(function (it) {
+      if (it.md5Raw) raw[String(it.md5Raw).toLowerCase()] = it;
+      if (it.md5) norm[String(it.md5).toLowerCase()] = it;
+    });
+    s.contactIndexRaw = raw;
+    s.contactIndex = norm;
+    s.bookCount = (r.items || []).length;
+    if (s.bookCount) toast('读到 ' + s.bookCount + ' 个联系人号码');
+    if (s.view === 'timeline') render();
+  }
+
+  function revealPanel() {
+    var p = s.perms || {};
+    var on = !!s.reveal;
+    var html = '<div class="panel"><h2>号码还原</h2>' +
+      '<button class="item" data-act="revealToggle">' +
+        ic('call') +
+        '<span class="lbl">用通讯录和通话记录还原号码' +
+          '<small>' + (on ? '只在本机内存里算 MD5 比对，不写盘不联网' : '默认关闭，开启后才读通讯录与通话记录') + '</small>' +
+        '</span>' +
+        '<span class="sw' + (on ? ' on' : '') + '"><i></i></span>' +
+      '</button>';
+    if (on) {
+      html += '<div class="kv" style="padding:10px 16px 0">' +
+        '<div class="k">通话记录</div><div class="v">' +
+          (p.calllog ? s.callList.length + ' 条已载入' : '未授权') + '</div>' +
+        '<div class="k">通讯录</div><div class="v">' +
+          (p.contacts ? s.bookCount + ' 个号码已载入' : '未授权') + '</div>' +
+        '</div>';
+      if (!p.calllog) html += item('permcall', 'call', '授予通话记录权限', '还没授权');
+      if (!p.contacts) html += item('permcontacts', 'folder', '授予通讯录权限', '还没授权');
+      html += item('revealReload', 'refresh', '重新读取', '号码变动后重新比对');
+    }
+    html += '</div>';
+    return html;
+  }
+
   function loadPerms() {
     if (!window.Android || !Android.permsState) return { images: false, video: false, calllog: false };
     try { return JSON.parse(Android.permsState() || '{}'); } catch (e) { return { images: false, video: false, calllog: false }; }
@@ -663,7 +730,7 @@
   function loadCallLog() {
     if (!window.Android || !Android.calllog) return;
     var p = s.perms || {};
-    if (!p.calllog) { s.callIndex = {}; s.callList = []; return; }
+    if (!s.reveal || !p.calllog) { s.callIndex = {}; s.callIndexRaw = {}; s.callList = []; return; }
     var r;
     try { r = JSON.parse(Android.calllog() || '{}'); } catch (e) { r = { ok: false, error: String(e) }; }
     if (!r.ok) { toast('通话记录读取失败：' + (r.error || '未知')); return; }
@@ -683,7 +750,9 @@
   function pairCall(d0) {
     if (!d0) return null;
     var k = String(d0.md5 || '').toLowerCase();
-    // 库里的算法是 md5(号码原样)，所以先按原样比，再退回去掉分隔符的重算值
+    // 先通讯录，再通话记录；每种都先比原样，再比去掉分隔符的重算值
+    if (k && s.contactIndexRaw && s.contactIndexRaw[k]) return { it: s.contactIndexRaw[k], how: 'contact' };
+    if (k && s.contactIndex && s.contactIndex[k]) return { it: s.contactIndex[k], how: 'contact' };
     if (k && s.callIndexRaw && s.callIndexRaw[k]) return { it: s.callIndexRaw[k], how: 'md5' };
     if (k && s.callIndex && s.callIndex[k]) return { it: s.callIndex[k], how: 'md5-norm' };
     if (s.callList && s.callList.length && d0.start) {
@@ -1067,6 +1136,22 @@
       else if (act === 'check') doCheck(false);
       else if (act === 'doupdate') doDownload();
       else if (act === 'openpage') { if (window.Android && Android.openUrl) Android.openUrl(s.update.page); }
+      else if (act === 'revealToggle') {
+        var nv = !s.reveal;
+        setReveal(nv);
+        if (nv) {
+          var pp = s.perms || {};
+          toast('已开启，只在本机内存里比对');
+          if (!pp.calllog) requestPerm('calllog');
+          else loadCallLog();
+          if (!pp.contacts) requestPerm('contacts');
+          else loadContacts();
+        } else {
+          toast('已关闭，已释放已载入的号码');
+        }
+        render();
+      }
+      else if (act === 'revealReload') { loadCallLog(); loadContacts(); render(); }
       else if (act === 'persistToggle') {
         var b = s.persist || {};
         var nxt = !b.enabled;
@@ -1097,6 +1182,7 @@
       }
       else if (act === 'permmedia') requestPerm('media');
       else if (act === 'permcall') requestPerm('calllog');
+      else if (act === 'permcontacts') requestPerm('contacts');
       else if (act === 'loadcalls') loadCallLog();
       else if (act === 'md5probe') md5Probe();
       else if (act === 'layout') layoutCheck();
@@ -1152,7 +1238,7 @@
   window.appLayout = function () { return measureLayout(true); };
   window.appPermChanged = function () {
     s.perms = loadPerms();
-    if (s.perms.calllog) loadCallLog();
+    if (s.reveal) { loadCallLog(); loadContacts(); }
     if (s.perms.images) { s.images = []; s.videos = []; loadScreens(); }
     render();
   };
@@ -1164,7 +1250,10 @@
     }
     s.perms = loadPerms();
     s.persist = persistInfo();
-    if (s.perms && s.perms.calllog) setTimeout(loadCallLog, 300);
+    s.reveal = getReveal();
+    if (s.reveal) {
+      setTimeout(function () { loadCallLog(); loadContacts(); }, 300);
+    }
 
     if (window.Android && Android.loadPersisted && s.persist && s.persist.enabled) {
       setTimeout(function () {
