@@ -35,6 +35,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.security.MessageDigest;
 import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -484,19 +485,97 @@ public class MainActivity extends Activity {
             }
         }
 
-        /** 用系统播放器/看图器打开原文件 */
+        /** 在应用内查看 / 播放，不跳出本应用 */
         @JavascriptInterface
         public void openMedia(String uriStr, boolean video) {
-            log("MEDIA", "打开原文件 " + uriStr);
+            log("MEDIA", "应用内打开 " + (video ? "视频 " : "图片 ") + uriStr);
             try {
-                Intent i = new Intent(Intent.ACTION_VIEW);
-                i.setDataAndType(Uri.parse(uriStr), video ? "video/*" : "image/*");
-                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                Intent i = new Intent(MainActivity.this, MediaActivity.class);
+                i.putExtra("uri", uriStr);
+                i.putExtra("video", video);
                 startActivity(i);
             } catch (Throwable e) {
                 log("MEDIA", "打开失败 " + e);
-                toast("没有能打开该文件的应用");
+                toast("打不开这个文件");
             }
+        }
+
+        /** 各权限当前状态 */
+        @JavascriptInterface
+        public String permsState() {
+            boolean img = granted(Build.VERSION.SDK_INT >= 33
+                    ? Manifest.permission.READ_MEDIA_IMAGES : Manifest.permission.READ_EXTERNAL_STORAGE);
+            boolean vid = Build.VERSION.SDK_INT < 33 || granted(Manifest.permission.READ_MEDIA_VIDEO);
+            boolean call = granted(Manifest.permission.READ_CALL_LOG);
+            return "{\"images\":" + img + ",\"video\":" + vid + ",\"calllog\":" + call
+                    + ",\"sdk\":" + Build.VERSION.SDK_INT + "}";
+        }
+
+        /** 申请某一组权限：media / calllog */
+        @JavascriptInterface
+        public void requestPerm(String which) {
+            log("PERM", "用户请求权限组 " + which);
+            String[] ps;
+            if ("calllog".equals(which)) {
+                ps = new String[]{Manifest.permission.READ_CALL_LOG};
+            } else if (Build.VERSION.SDK_INT >= 33) {
+                ps = new String[]{Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO};
+            } else {
+                ps = new String[]{Manifest.permission.READ_EXTERNAL_STORAGE};
+            }
+            requestPermissions(ps, REQ_PERM);
+        }
+
+        /** 系统通话记录，带号码 md5 方便和库里配对 */
+        @JavascriptInterface
+        public String calllog() {
+            if (!granted(Manifest.permission.READ_CALL_LOG)) {
+                log("CALL", "没有 READ_CALL_LOG，跳过通话记录");
+                return "{\"ok\":false,\"error\":\"no-permission\"}";
+            }
+            log("CALL", "开始读取通话记录");
+            StringBuilder sb = new StringBuilder("{\"ok\":true,\"items\":[");
+            int n = 0;
+            Cursor c = null;
+            try {
+                String[] proj = {
+                        android.provider.CallLog.Calls.NUMBER,
+                        android.provider.CallLog.Calls.CACHED_NAME,
+                        android.provider.CallLog.Calls.DATE,
+                        android.provider.CallLog.Calls.DURATION,
+                        android.provider.CallLog.Calls.TYPE,
+                        android.provider.CallLog.Calls.GEOCODED_LOCATION};
+                c = getContentResolver().query(android.provider.CallLog.Calls.CONTENT_URI,
+                        proj, null, null, android.provider.CallLog.Calls.DATE + " DESC");
+                if (c != null) {
+                    while (c.moveToNext() && n < 800) {
+                        String num = c.getString(0);
+                        String name = c.getString(1);
+                        long date = c.getLong(2);
+                        long dur = c.getLong(3);
+                        int type = c.getInt(4);
+                        String geo = c.getString(5);
+                        if (n > 0) sb.append(',');
+                        sb.append("{\"number\":").append(q(num))
+                                .append(",\"name\":").append(q(name))
+                                .append(",\"date\":").append(date)
+                                .append(",\"dur\":").append(dur)
+                                .append(",\"type\":").append(type)
+                                .append(",\"geo\":").append(q(geo))
+                                .append(",\"md5\":").append(q(md5hex(num == null ? "" : num
+                                        .replace(" ", "").replace("-", ""))))
+                                .append('}');
+                        n++;
+                    }
+                }
+                log("CALL", "读到 " + n + " 条通话记录");
+            } catch (Throwable e) {
+                log("CALL", "读取失败 " + e);
+                return "{\"ok\":false,\"error\":" + q(String.valueOf(e)) + "}";
+            } finally {
+                if (c != null) c.close();
+            }
+            return sb.append("]}").toString();
         }
 
         @JavascriptInterface
@@ -810,6 +889,13 @@ public class MainActivity extends Activity {
         for (int i = 0; i < perms.length; i++) {
             log("PERM", perms[i] + " → " + (res[i] == PackageManager.PERMISSION_GRANTED ? "授予" : "拒绝"));
         }
+        if (web != null) {
+            web.post(new Runnable() {
+                public void run() {
+                    web.evaluateJavascript("window.appPermChanged && window.appPermChanged()", null);
+                }
+            });
+        }
     }
 
     @Override
@@ -861,6 +947,26 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (web != null && web.canGoBack()) web.goBack();
         else super.onBackPressed();
+    }
+
+    private boolean granted(String p) {
+        try {
+            return checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    private static String md5hex(String s) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] d = md.digest(s.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for (byte x : d) sb.append(String.format("%02x", x));
+            return sb.toString();
+        } catch (Throwable e) {
+            return "";
+        }
     }
 
     private static String httpGet(String url) throws Exception {

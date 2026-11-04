@@ -49,7 +49,8 @@
     events: [], recovered: [], images: [], videos: [], showPair: false, thumbsDone: {},
     view: 'timeline', filter: 'all', table: null,
     shown: 240, showDeleted: true, tableShown: 80,
-    version: '', update: null, checking: false, downloaded: ''
+    version: '', update: null, checking: false, downloaded: '',
+    perms: null, callIndex: {}, callList: []
   };
 
   /* ---------- 工具 ---------- */
@@ -320,12 +321,27 @@
         }
         break;
       }
-      case 'call':
+      case 'call': {
+        var pc = pairCall(d0);
         title = '通话 · ' + esc(d0.loc || '归属地未知');
-        sub = [d0.op ? esc(d0.op) : '', durText(d0.dur), d0.virt ? '虚拟运营商' : '', d0.fraud ? '<b>涉诈标记</b>' : '']
-          .filter(Boolean).join(' · ');
-        if (d0.md5) extra = '号码摘要 <span class="mono">' + esc(String(d0.md5).slice(0, 18)) + '…</span>';
+        var bits = [d0.op ? esc(d0.op) : '', durText(d0.dur),
+          d0.virt ? '虚拟运营商' : '', d0.fraud ? '<b>涉诈标记</b>' : ''].filter(Boolean);
+        if (pc && pc.it.number) {
+          bits.push('号码 <b>' + esc(pc.it.number) + '</b>' +
+            (pc.it.name ? '（' + esc(pc.it.name) + '）' : ''));
+        }
+        sub = bits.join(' · ');
+        var kv2 = [];
+        if (d0.md5) kv2.push('号码摘要 ' + esc(String(d0.md5).slice(0, 18)) + '…');
+        if (pc) {
+          kv2.push('系统记录 ' + hms(pc.it.date) + ' · ' +
+            (pc.it.dur ? durText(pc.it.dur * 1000) : '未接通') +
+            (pc.how === 'time' ? ' · 按时间匹配' : '') +
+            (pc.it.geo ? ' · ' + esc(pc.it.geo) : ''));
+        }
+        extra = kv2.join('<br>');
         break;
+      }
       case 'air':
         title = '飞行模式' + (d0.on ? '开启' : '状态变化');
         sub = '记录值 ' + esc(d0.on);
@@ -507,10 +523,27 @@
     return '<div class="panel"><h2>版本</h2>' + body + '</div>';
   }
 
+  function permPanel() {
+    var p = s.perms || {};
+    var mediaOk = !!p.images;
+    var callOk = !!p.calllog;
+    return '<div class="panel"><h2>权限</h2>' +
+      item('permmedia', 'photo',
+        mediaOk ? '相册权限已授予' : '授予相册权限',
+        mediaOk ? '可配对截图与录屏，显示缩略图并可应用内查看'
+                : '不授权也能用，只是没有缩略图和配对') +
+      item('permcall', 'call',
+        callOk ? '通话记录权限已授予' : '授予通话记录权限',
+        callOk ? '可把库里的号码 md5 还原成明文号码与联系人'
+               : '不授权也能用，通话只显示号码摘要') +
+      '</div>';
+  }
+
   function renderMore() {
     var hasBridge = !!window.Android;
     $('#view').innerHTML =
       versionPanel() +
+      permPanel() +
       '<div class="panel"><h2>读取</h2>' +
         item('auto', 'folder', '从系统路径读取', hasBridge ? '自动尝试五个常见位置，需要 root' : '需要在 App 内运行', !hasBridge) +
         item('pick', 'download', '选择 db 文件', '系统文件选择器，不需要 root') +
@@ -615,6 +648,39 @@
       setView('logs');
       render();
     }, 20);
+  }
+
+  function loadPerms() {
+    if (!window.Android || !Android.permsState) return { images: false, video: false, calllog: false };
+    try { return JSON.parse(Android.permsState() || '{}'); } catch (e) { return { images: false, video: false, calllog: false }; }
+  }
+
+  function loadCallLog() {
+    if (!window.Android || !Android.calllog) return;
+    var p = s.perms || {};
+    if (!p.calllog) { s.callIndex = {}; s.callList = []; return; }
+    var r;
+    try { r = JSON.parse(Android.calllog() || '{}'); } catch (e) { r = { ok: false, error: String(e) }; }
+    if (!r.ok) { toast('通话记录读取失败：' + (r.error || '未知')); return; }
+    var arr = (r.items || []).slice().sort(function (a, b) { return a.date - b.date; });
+    var idx = {};
+    arr.forEach(function (it) { if (it.md5) idx[String(it.md5).toLowerCase()] = it; });
+    s.callList = arr;
+    s.callIndex = idx;
+    if (arr.length) toast('读到 ' + arr.length + ' 条通话记录');
+    if (s.view === 'timeline') render();
+  }
+
+  function pairCall(d0) {
+    if (!d0) return null;
+    var k = String(d0.md5 || '').toLowerCase();
+    if (k && s.callIndex && s.callIndex[k]) return { it: s.callIndex[k], how: 'md5' };
+    if (s.callList && s.callList.length && d0.start) {
+      var wrapped = s.callList.map(function (it) { return { ms: it.date, it: it }; });
+      var near = nearest(wrapped, d0.start, 90000);
+      if (near) return { it: near.item.it, how: 'time' };
+    }
+    return null;
   }
 
   function logToNative(tag, msg) {
@@ -871,10 +937,17 @@
       else if (act === 'moreTable') { s.tableShown += 80; render(); }
       else if (act === 'auto') autoLoad();
       else if (act === 'pick') pick();
-      else if (act === 'screens') { s.images = []; s.videos = []; loadScreens(); }
+      else if (act === 'screens') {
+        s.images = []; s.videos = [];
+        if (s.perms && !s.perms.images) { toast('先授予相册权限'); requestPerm('media'); return; }
+        loadScreens();
+      }
       else if (act === 'check') doCheck(false);
       else if (act === 'doupdate') doDownload();
       else if (act === 'openpage') { if (window.Android && Android.openUrl) Android.openUrl(s.update.page); }
+      else if (act === 'permmedia') requestPerm('media');
+      else if (act === 'permcall') requestPerm('calllog');
+      else if (act === 'loadcalls') loadCallLog();
       else if (act === 'layout') layoutCheck();
       else if (act === 'selftest') runSelfTest();
       else if (act === 'logs') { setView('logs'); render(); }
@@ -903,6 +976,15 @@
     });
   }
 
+  function requestPerm(which) {
+    if (!window.Android || !Android.requestPerm) { toast('需要在 App 内运行'); return; }
+    var p = s.perms || {};
+    if (which === 'media' && p.images) { toast('相册权限已经有了'); return; }
+    if (which === 'calllog' && p.calllog) { toast('通话记录权限已经有了'); return; }
+    Android.requestPerm(which);
+    toast('请在系统弹窗里选择允许');
+  }
+
   function pick() {
     if (window.Android && Android.pickFile) Android.pickFile();
     else $('#fileInput').click();
@@ -917,12 +999,20 @@
   window.appAutoLoad = autoLoad;
   window.appRender = function (v) { if (v) setView(v); render(); };
   window.appLayout = function () { return measureLayout(true); };
+  window.appPermChanged = function () {
+    s.perms = loadPerms();
+    if (s.perms.calllog) loadCallLog();
+    if (s.perms.images) { s.images = []; s.videos = []; loadScreens(); }
+    render();
+  };
 
   document.addEventListener('DOMContentLoaded', function () {
     bind();
     if (window.Android && Android.versionInfo) {
       try { s.version = (JSON.parse(Android.versionInfo() || '{}') || {}).name || ''; } catch (e) { }
     }
+    s.perms = loadPerms();
+    if (s.perms && s.perms.calllog) setTimeout(loadCallLog, 300);
     if (window.Android && Android.autoLoad) setTimeout(autoLoad, 150);
     else render();
   });
