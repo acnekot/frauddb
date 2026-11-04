@@ -79,6 +79,32 @@ call_forwarding(_id, reason, enabled, timestamp)
 `web/` 是自包含的，`file://` 打开 `index.html` 也能用：点「更多 → 选择 db 文件」挑一个副本即可，
 只是没有相册配对和 root 直读。
 
+## 诊断日志
+
+root 读不到东西时，先看日志再猜原因喵。
+
+「更多 → 诊断 → 跑一次 root 自检」会依次执行 `id`、`getenforce`、`su -v`、`su -c id`、
+`su -c ls -ld /data/misc/user/0/securitycenter`、`su -c ls -l <库文件>`、列出已装的 root 管理器、
+以及 `ksud -V`，每一步都记录**退出码、耗时、stdout 字节数、预览、stderr**喵。
+
+日志覆盖这些内容：
+
+- 应用启动信息：版本、pid、uid、设备型号、Android 版本、内核、ABI
+- 每次 `su` 调用：完整命令行、退出码、耗时、原始输出长度、二进制首字节
+- 六个候选路径的 `exists` / `canRead` / `size` / 直读结果
+- 权限申请结果、MediaStore 查询数量、文件选择器返回
+- WebView 里的 JS 报错（`console.log` / 异常都会进来）
+
+日志写到 `/data/data/com.catsuki.fkmiui/files/logs/frauddb.log`，超过 512KB 自动轮转成 `.1.log`喵。
+在「诊断日志」页可以复制、导出、清空喵。
+
+常见结论对照：
+
+- `exit=1 err=permission denied` → root 管理器没给本应用授权
+- `su: not found` / `IOException: ENOENT` → 设备上没有可用的 su
+- `exit=TIMEOUT` → 多半在等授权弹窗，或者 late-load 卡在策略加载
+- `stdout=0B 无任何输出` 但没报错 → SELinux 拦住了读取
+
 ## 构建
 
 需要 JDK 17、Android build-tools（`aapt2` `d8` `zipalign` `apksigner`）和一份 `android.jar`。

@@ -455,12 +455,60 @@
         item('expJson', 'download', '全量 JSON', '含所有字段与恢复记录') +
         item('expCsv', 'download', '事件 CSV', '带 BOM，Excel 直接开') +
       '</div>' +
+      '<div class="panel"><h2>诊断</h2>' +
+        item('selftest', 'scan', '跑一次 root 自检', '依次执行 id / getenforce / su -v / su -c id') +
+        item('logs', 'info', '诊断日志', 'su 调用、返回码、SELinux、路径探测') +
+        item('logcopy', 'download', '复制全部日志', '直接贴出来就能看') +
+      '</div>' +
       '<div class="panel"><h2>说明</h2><div style="font-size:13px;line-height:1.8;color:var(--on-surface-var)">' +
         '全程只读，解析和恢复都在内存里完成，不会写回你的数据库。<br><br>' +
         '截图表只存时间戳，「扫描相册」会把 <span class="mono">Pictures/Screenshots</span> 的文件名对上来，还原当时前台是哪个 App。<br><br>' +
         '「含已删除」靠空闲页和页内空闲块里的残留，系统开了 secure_delete 的话这部分会被清零，能捞回的会明显变少。<br><br>' +
         '原始路径通常是 <span class="mono">/data/misc/user/0/securitycenter/fraud_detection_data.db</span>，由手机管家的反诈服务写入。' +
       '</div></div>';
+  }
+
+  function logText() {
+    if (!window.Android || !Android.logs) return { file: '', lines: [] };
+    try { return JSON.parse(Android.logs() || '{}'); } catch (e) { return { file: '', lines: [] }; }
+  }
+
+  function renderLogs() {
+    var d = logText();
+    var lines = (d.lines || []).slice().reverse();
+    var body = lines.length
+      ? lines.map(function (l) { return esc(l); }).join('\n')
+      : '（还没有日志，先跑一次 root 自检）';
+    var tip = s.verdict ? '<div class="verdict">' + esc(s.verdict) + '</div>' : '';
+    $('#view').innerHTML =
+      tip +
+      '<div class="panel" style="padding:12px">' +
+        '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">' +
+          '<button class="chip" data-act="selftest">跑自检</button>' +
+          '<button class="chip" data-act="logcopy">复制</button>' +
+          '<button class="chip" data-act="logexport">导出</button>' +
+          '<button class="chip" data-act="logclear">清空</button>' +
+          '<button class="chip" data-act="logs">刷新</button>' +
+        '</div>' +
+        '<div class="logpath mono">' + esc(d.file || '（日志文件不可用）') + '</div>' +
+        '<pre class="logview">' + body + '</pre>' +
+      '</div>';
+  }
+
+  function runSelfTest() {
+    if (!window.Android || !Android.selfTest) { toast('需要在 App 内运行'); return; }
+    toast('正在自检…');
+    setTimeout(function () {
+      try {
+        var r = JSON.parse(Android.selfTest() || '{}');
+        s.verdict = r.verdict || '';
+        toast('自检完成');
+      } catch (e) {
+        toast('自检失败：' + e);
+      }
+      setView('logs');
+      render();
+    }, 20);
   }
 
   function render() {
@@ -481,6 +529,7 @@
     if (s.view === 'timeline') renderTimeline();
     else if (s.view === 'tables') renderTables();
     else if (s.view === 'stats') renderStats();
+    else if (s.view === 'logs') renderLogs();
     else renderMore();
   }
 
@@ -505,7 +554,8 @@
   function setView(v) {
     s.view = v;
     document.querySelectorAll('#nav button').forEach(function (b) {
-      b.classList.toggle('active', b.getAttribute('data-view') === v);
+      var nav = v === 'logs' ? 'more' : v;
+      b.classList.toggle('active', b.getAttribute('data-view') === nav);
     });
   }
 
@@ -627,6 +677,15 @@
       else if (act === 'auto') autoLoad();
       else if (act === 'pick') pick();
       else if (act === 'screens') { s.screens = []; loadScreens(); }
+      else if (act === 'selftest') runSelfTest();
+      else if (act === 'logs') { setView('logs'); render(); }
+      else if (act === 'logcopy') { if (window.Android && Android.copyText) Android.copyText(logText().lines.join('\n')); else toast('需要在 App 内运行'); }
+      else if (act === 'logexport') {
+        var d = logText();
+        if (window.Android && Android.exportText) Android.exportText('frauddb-log.txt', d.lines.join('\n'));
+        else toast('需要在 App 内运行');
+      }
+      else if (act === 'logclear') { if (window.Android && Android.clearLogs) { Android.clearLogs(); s.verdict = ''; render(); } }
       else if (act === 'expTxt') exportFile('txt');
       else if (act === 'expJson') exportFile('json');
       else if (act === 'expCsv') exportFile('csv');
