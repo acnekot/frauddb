@@ -50,7 +50,8 @@
     view: 'timeline', filter: 'all', table: null,
     shown: 240, showDeleted: true, tableShown: 80,
     version: '', update: null, checking: false, downloaded: '',
-    perms: null, callIndex: {}, callIndexRaw: {}, callList: []
+    perms: null, callIndex: {}, callIndexRaw: {}, callList: [],
+    persist: { enabled: false }, lastB64: ''
   };
 
   /* ---------- 工具 ---------- */
@@ -482,7 +483,8 @@
     $('#view').innerHTML =
       '<div class="panel"><h2>数据库</h2><div class="kv">' +
         '<div class="k">文件</div><div class="v">' + esc(s.name || '—') + '</div>' +
-        '<div class="k">来源</div><div class="v">' + esc(s.src === 'root' ? '系统路径（root 读取）' : s.src === 'pick' ? '手动选择' : '未知') + '</div>' +
+        '<div class="k">来源</div><div class="v">' + esc(s.src === 'root' ? '系统路径（root 读取）' : s.src === 'pick' ? '手动选择'
+        : s.src === 'stored' ? '上次保存的副本' : '未知') + '</div>' +
         '<div class="k">体积</div><div class="v">' + sizeText(st.fileSize || 0) + '，' + (st.pageSize || 0) + ' B/页 × ' + (st.pageCount || 0) + ' 页</div>' +
         '<div class="k">编码</div><div class="v">' + esc(st.encoding || '—') + '</div>' +
         '<div class="k">全部行数</div><div class="v">' + total + ' 条</div>' +
@@ -541,8 +543,10 @@
 
   function renderMore() {
     var hasBridge = !!window.Android;
+    s.persist = persistInfo();
     $('#view').innerHTML =
       versionPanel() +
+      persistPanel() +
       permPanel() +
       '<div class="panel"><h2>读取</h2>' +
         item('auto', 'folder', '从系统路径读取', hasBridge ? '自动尝试五个常见位置，需要 root' : '需要在 App 内运行', !hasBridge) +
@@ -844,7 +848,42 @@
   }
 
   /* ---------- 载入 ---------- */
-  function applyBytes(bytes, name, path, src) {
+  function persistInfo() {
+    if (!window.Android || !Android.persistInfo) return { enabled: false };
+    try { return JSON.parse(Android.persistInfo() || '{}'); } catch (e) { return { enabled: false }; }
+  }
+
+  function persistPanel() {
+    var p = s.persist || {};
+    var on = !!p.enabled;
+    var info = '';
+    if (p.exists) {
+      info = '已保存 ' + sizeText(p.size || 0) +
+        (p.savedAt ? ' · ' + dayKey(p.savedAt) + ' ' + hms(p.savedAt) : '');
+    } else {
+      info = '还没有保存副本';
+    }
+    var html = '<div class="panel"><h2>数据库保存</h2>' +
+      '<button class="item" data-act="persistToggle">' +
+        ic('install') +
+        '<span class="lbl">保存上次导入的数据库' +
+          '<small>' + (on ? '下次启动自动恢复时间线' : '默认关闭，开启后才会写入副本') + '</small>' +
+        '</span>' +
+        '<span class="sw' + (on ? ' on' : '') + '"><i></i></span>' +
+      '</button>';
+    if (on) {
+      html += '<div class="kv" style="padding:10px 16px 0">' +
+        '<div class="k">存储位置</div><div class="v mono">' + esc(p.path || '—') + '</div>' +
+        '<div class="k">状态</div><div class="v">' + esc(info) + '</div>' +
+        '</div>';
+      html += item('persistSave', 'download', '立即保存当前数据库', '把当前解析的库写入上面的位置');
+      html += item('persistClear', 'chevron', '清除已保存的副本', '删除本地副本，时间线仍在内存中');
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function applyBytes(bytes, name, path, src, b64) {
     try {
       s.db = SQLiteLite.open(bytes);
     } catch (e) {
@@ -855,6 +894,14 @@
     s.path = path || '';
     s.src = src || '';
     s.filter = 'all'; s.shown = 240; s.tableShown = 80; s.table = null;
+    s.lastB64 = b64 || '';
+    if (b64 && s.persist && s.persist.enabled && window.Android && Android.persistCurrent) {
+      try {
+        var pr = JSON.parse(Android.persistCurrent(name, src, b64) || '{}');
+        if (pr.ok) logToNative('SAVE', '已写入副本 ' + pr.path);
+      } catch (e) { }
+      s.persist = persistInfo();
+    }
     buildEvents();
     setView('timeline');
     render();
@@ -911,7 +958,7 @@
       try { r = JSON.parse(Android.autoLoad()); }
       catch (e) { toast('读取出错：' + e); return; }
       if (r && r.ok) {
-        applyBytes(b64ToBytes(r.b64), r.name, r.path, 'root');
+        applyBytes(b64ToBytes(r.b64), r.name, r.path, 'root', r.b64);
         setTimeout(loadScreens, 60);
       } else {
         toast((r && r.error) || '没找到数据库，试试手动选择');
@@ -1020,6 +1067,34 @@
       else if (act === 'check') doCheck(false);
       else if (act === 'doupdate') doDownload();
       else if (act === 'openpage') { if (window.Android && Android.openUrl) Android.openUrl(s.update.page); }
+      else if (act === 'persistToggle') {
+        var b = s.persist || {};
+        var nxt = !b.enabled;
+        try { s.persist = JSON.parse(Android.setPersist(nxt) || '{}'); } catch (e) { s.persist = { enabled: nxt }; }
+        if (nxt) {
+          toast('已开启，副本会存到 ' + (s.persist.path || '应用私有目录'));
+          if (s.lastB64) { try { Android.persistCurrent(s.name, s.src, s.lastB64); } catch (e) { } s.persist = persistInfo(); }
+        } else {
+          toast('已关闭，本地副本已删除');
+          s.lastB64 = s.lastB64 || '';
+        }
+        render();
+      }
+      else if (act === 'persistSave') {
+        if (!s.lastB64) { toast('当前没有已解析的数据库'); return; }
+        try {
+          var r2 = JSON.parse(Android.persistCurrent(s.name, s.src, s.lastB64) || '{}');
+          toast(r2.ok ? '已保存到 ' + r2.path : '保存失败：' + (r2.error || ''));
+        } catch (e) { toast('保存失败'); }
+        s.persist = persistInfo();
+        render();
+      }
+      else if (act === 'persistClear') {
+        try { Android.clearPersisted(); } catch (e) { }
+        toast('已清除本地副本');
+        s.persist = persistInfo();
+        render();
+      }
       else if (act === 'permmedia') requestPerm('media');
       else if (act === 'permcall') requestPerm('calllog');
       else if (act === 'loadcalls') loadCallLog();
@@ -1068,7 +1143,7 @@
 
   window.onPickedDb = function (name, b64) {
     if (!b64) { toast('读取失败'); return; }
-    applyBytes(b64ToBytes(b64), name, '', 'pick');
+    applyBytes(b64ToBytes(b64), name, '', 'pick', b64);
     setTimeout(loadScreens, 60);
   };
   window.onBridgeError = function (m) { toast(m || '读取失败'); };
@@ -1088,8 +1163,24 @@
       try { s.version = (JSON.parse(Android.versionInfo() || '{}') || {}).name || ''; } catch (e) { }
     }
     s.perms = loadPerms();
+    s.persist = persistInfo();
     if (s.perms && s.perms.calllog) setTimeout(loadCallLog, 300);
-    if (window.Android && Android.autoLoad) setTimeout(autoLoad, 150);
-    else render();
+
+    if (window.Android && Android.loadPersisted && s.persist && s.persist.enabled) {
+      setTimeout(function () {
+        var r = {};
+        try { r = JSON.parse(Android.loadPersisted() || '{}'); } catch (e) { r = {}; }
+        if (r && r.ok && r.b64) {
+          applyBytes(b64ToBytes(r.b64), r.name, '', 'stored', r.b64);
+          setTimeout(loadScreens, 60);
+        } else if (window.Android && Android.autoLoad) {
+          autoLoad();
+        }
+      }, 120);
+    } else if (window.Android && Android.autoLoad) {
+      setTimeout(autoLoad, 150);
+    } else {
+      render();
+    }
   });
 })();

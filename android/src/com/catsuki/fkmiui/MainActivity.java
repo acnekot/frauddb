@@ -603,6 +603,121 @@ public class MainActivity extends Activity {
             return md5hex(s == null ? "" : s);
         }
 
+        /* ---------- 数据库持久化 ---------- */
+
+        private File persistedDb() {
+            File d = new File(getFilesDir(), "imported");
+            if (!d.exists()) d.mkdirs();
+            return new File(d, "fraud_detection_data.db");
+        }
+
+        private File persistedMeta() {
+            return new File(new File(getFilesDir(), "imported"), "meta.json");
+        }
+
+        private boolean persistEnabled() {
+            return getSharedPreferences("fkmiui", MODE_PRIVATE).getBoolean("persist", false);
+        }
+
+        @JavascriptInterface
+        public String persistInfo() {
+            File f = persistedDb();
+            boolean on = persistEnabled();
+            boolean exists = f.exists() && f.length() > 0;
+            String name = "", src = "";
+            long savedAt = 0;
+            try {
+                if (persistedMeta().exists()) {
+                    String m = new String(drain(new java.io.FileInputStream(persistedMeta())), "UTF-8");
+                    org.json.JSONObject o = new org.json.JSONObject(m);
+                    name = o.optString("name", "");
+                    src = o.optString("src", "");
+                    savedAt = o.optLong("savedAt", 0);
+                }
+            } catch (Throwable ignored) { }
+            return "{\"enabled\":" + on + ",\"exists\":" + exists
+                    + ",\"path\":" + q(f.getAbsolutePath())
+                    + ",\"size\":" + (exists ? f.length() : 0)
+                    + ",\"name\":" + q(name)
+                    + ",\"src\":" + q(src)
+                    + ",\"savedAt\":" + savedAt + "}";
+        }
+
+        @JavascriptInterface
+        public String setPersist(boolean on) {
+            getSharedPreferences("fkmiui", MODE_PRIVATE).edit().putBoolean("persist", on).apply();
+            log("SAVE", "持久化开关 → " + on);
+            if (!on) {
+                boolean removed = persistedDb().delete();
+                persistedMeta().delete();
+                log("SAVE", "关闭持久化，已删除副本 " + removed);
+            }
+            return persistInfo();
+        }
+
+        @JavascriptInterface
+        public String persistCurrent(String name, String src, String b64) {
+            if (!persistEnabled()) {
+                log("SAVE", "持久化未开启，跳过");
+                return "{\"ok\":false,\"error\":\"disabled\"}";
+            }
+            try {
+                byte[] data = Base64.decode(b64, Base64.DEFAULT);
+                File f = persistedDb();
+                FileOutputStream fos = new FileOutputStream(f);
+                fos.write(data);
+                fos.close();
+                org.json.JSONObject meta = new org.json.JSONObject();
+                meta.put("name", name == null ? "" : name);
+                meta.put("src", src == null ? "" : src);
+                meta.put("savedAt", System.currentTimeMillis());
+                meta.put("size", data.length);
+                FileOutputStream mf = new FileOutputStream(persistedMeta());
+                mf.write(meta.toString().getBytes("UTF-8"));
+                mf.close();
+                log("SAVE", "已保存副本 " + f.getAbsolutePath() + " " + data.length + " 字节");
+                return "{\"ok\":true,\"path\":" + q(f.getAbsolutePath()) + ",\"size\":" + data.length + "}";
+            } catch (Throwable e) {
+                log("SAVE", "保存失败 " + e);
+                return "{\"ok\":false,\"error\":" + q(String.valueOf(e)) + "}";
+            }
+        }
+
+        @JavascriptInterface
+        public String loadPersisted() {
+            if (!persistEnabled()) return "{\"ok\":false,\"error\":\"disabled\"}";
+            File f = persistedDb();
+            if (!f.exists() || f.length() == 0) return "{\"ok\":false,\"error\":\"empty\"}";
+            try {
+                byte[] data = readFile(f);
+                if (data == null || data.length < 16) return "{\"ok\":false,\"error\":\"read\"}";
+                String name = "fraud_detection_data.db", src = "stored";
+                try {
+                    if (persistedMeta().exists()) {
+                        org.json.JSONObject o = new org.json.JSONObject(
+                                new String(drain(new java.io.FileInputStream(persistedMeta())), "UTF-8"));
+                        name = o.optString("name", name);
+                        src = o.optString("src", src);
+                    }
+                } catch (Throwable ignored) { }
+                log("SAVE", "恢复上次导入的副本 " + data.length + " 字节");
+                return "{\"ok\":true,\"name\":" + q(name) + ",\"src\":" + q(src)
+                        + ",\"b64\":" + q(Base64.encodeToString(data, Base64.NO_WRAP)) + "}";
+            } catch (Throwable e) {
+                return "{\"ok\":false,\"error\":" + q(String.valueOf(e)) + "}";
+            }
+        }
+
+        @JavascriptInterface
+        public String clearPersisted() {
+            File f = persistedDb();
+            long freed = f.exists() ? f.length() : 0;
+            boolean ok = !f.exists() || f.delete();
+            persistedMeta().delete();
+            log("SAVE", "清除副本 " + ok + "，释放 " + freed + " 字节");
+            return "{\"ok\":" + ok + ",\"freed\":" + freed + "}";
+        }
+
         @JavascriptInterface
         public void webLog(String tag, String msg) {
             log(tag == null || tag.isEmpty() ? "WEB" : tag, msg == null ? "" : msg);
